@@ -1,0 +1,17 @@
+[package]
+name = "bambu-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "Rust bridge daemon for Bambu Lab printers via libbambu_networking.so"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+cc = "1"
