@@ -5,6 +5,42 @@
 
 use std::os::raw::{c_char, c_int, c_uint, c_void};
 
+// C-compatible PrintParams matching BambuShimPrintParams in shim.cpp
+#[repr(C)]
+pub struct ShimPrintParams {
+    pub dev_id: *const c_char,
+    pub task_name: *const c_char,
+    pub project_name: *const c_char,
+    pub preset_name: *const c_char,
+    pub filename: *const c_char,
+    pub config_filename: *const c_char,
+    pub plate_index: c_int,
+    pub ftp_folder: *const c_char,
+    pub ams_mapping: *const c_char,
+    pub ams_mapping2: *const c_char,
+    pub ams_mapping_info: *const c_char,
+    pub connection_type: *const c_char,
+    pub print_type: *const c_char,
+    pub task_bed_leveling: c_int,
+    pub task_flow_cali: c_int,
+    pub task_vibration_cali: c_int,
+    pub task_layer_inspect: c_int,
+    pub task_record_timelapse: c_int,
+    pub task_use_ams: c_int,
+    pub task_bed_type: *const c_char,
+}
+
+#[repr(C)]
+pub struct ShimPrintResult {
+    pub return_code: c_int,
+    pub print_result: c_int,
+    pub finished: c_int,
+}
+
+// Print progress callback type
+pub type OnPrintProgressFn =
+    extern "C" fn(stage: c_int, code: c_int, msg: *const c_char, ctx: *mut c_void);
+
 // Callback function pointer types matching shim.cpp typedefs
 pub type OnServerConnectedFn = extern "C" fn(rc: c_int, reason: c_int, ctx: *mut c_void);
 pub type OnMessageFn = extern "C" fn(dev_id: *const c_char, msg: *const c_char, ctx: *mut c_void);
@@ -101,5 +137,14 @@ extern "C" {
         agent: *mut c_void,
         cb: OnSubscribeFailureFn,
         ctx: *mut c_void,
+    ) -> c_int;
+
+    // Print
+    pub fn bambu_shim_start_print(
+        agent: *mut c_void,
+        params: *const ShimPrintParams,
+        progress_cb: OnPrintProgressFn,
+        progress_ctx: *mut c_void,
+        result: *mut ShimPrintResult,
     ) -> c_int;
 }

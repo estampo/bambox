@@ -6,6 +6,7 @@
 mod agent;
 mod callbacks;
 mod ffi;
+mod print_job;
 mod server;
 
 use std::io::{self, BufRead, Write};
