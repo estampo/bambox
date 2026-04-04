@@ -13,7 +13,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 toml = "0.8"
+tempfile = "3"
+zip = "2"
+roxmltree = "0.20"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
+axum-extra = { version = "0.9", features = ["multipart"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

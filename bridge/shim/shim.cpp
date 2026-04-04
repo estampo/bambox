@@ -18,6 +18,9 @@
 // Type definitions matching bambu_networking.hpp
 // ---------------------------------------------------------------------------
 
+typedef std::function<void(int status, int code, std::string msg)> OnUpdateStatusFn;
+typedef std::function<bool()> WasCancelledFn;
+typedef std::function<bool(int status, std::string job_info)> OnWaitFn;
 typedef std::function<void(int online_login, bool login)> OnUserLoginFn;
 typedef std::function<void(std::string topic_str)> OnPrinterConnectedFn;
 typedef std::function<void(int return_code, int reason_code)> OnServerConnectedFn;
@@ -25,6 +28,51 @@ typedef std::function<void(unsigned http_code, std::string http_body)> OnHttpErr
 typedef std::function<std::string()> GetCountryCodeFn;
 typedef std::function<void(std::string topic)> GetSubscribeFailureFn;
 typedef std::function<void(std::string dev_id, std::string msg)> OnMessageFn;
+
+struct PrintParams {
+    std::string dev_id;
+    std::string task_name;
+    std::string project_name;
+    std::string preset_name;
+    std::string filename;
+    std::string config_filename;
+    int         plate_index;
+    std::string ftp_folder;
+    std::string ftp_file;
+    std::string ftp_file_md5;
+    std::string nozzle_mapping;
+    std::string ams_mapping;
+    std::string ams_mapping2;
+    std::string ams_mapping_info;
+    std::string nozzles_info;
+    std::string connection_type;
+    std::string comments;
+    int         origin_profile_id = 0;
+    int         stl_design_id = 0;
+    std::string origin_model_id;
+    std::string print_type;
+    std::string dst_file;
+    std::string dev_name;
+    std::string dev_ip;
+    bool        use_ssl_for_ftp;
+    bool        use_ssl_for_mqtt;
+    std::string username;
+    std::string password;
+    bool        task_bed_leveling;
+    bool        task_flow_cali;
+    bool        task_vibration_cali;
+    bool        task_layer_inspect;
+    bool        task_record_timelapse;
+    bool        task_use_ams;
+    std::string task_bed_type;
+    std::string extra_options;
+    int         auto_bed_leveling{0};
+    int         auto_flow_cali{0};
+    int         auto_offset_cali{0};
+    int         extruder_cali_manual_mode{-1};
+    bool        task_ext_change_assist;
+    bool        try_emmc_print;
+};
 
 // ---------------------------------------------------------------------------
 // Function pointer types (resolved via dlsym)
@@ -53,6 +101,7 @@ typedef int (*fn_set_extra_http_header)(void*, std::map<std::string, std::string
 typedef int (*fn_send_message)(void*, std::string, std::string, int);
 typedef int (*fn_send_message_to_printer)(void*, std::string, std::string, int, int);
 typedef int (*fn_start_subscribe)(void*, std::string);
+typedef int (*fn_start_print)(void*, PrintParams, OnUpdateStatusFn, WasCancelledFn, OnWaitFn);
 
 // ---------------------------------------------------------------------------
 // Resolved function pointers
@@ -83,6 +132,7 @@ static fn_set_extra_http_header     fp_set_extra_hdr = nullptr;
 static fn_send_message              fp_send_msg = nullptr;
 static fn_send_message_to_printer   fp_send_msg_printer = nullptr;
 static fn_start_subscribe           fp_start_sub = nullptr;
+static fn_start_print               fp_start_print = nullptr;
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -129,6 +179,7 @@ int bambu_shim_load(const char* lib_path) {
     fp_send_msg        = load_fn<fn_send_message>("bambu_network_send_message");
     fp_send_msg_printer = load_fn<fn_send_message_to_printer>("bambu_network_send_message_to_printer");
     fp_start_sub       = load_fn<fn_start_subscribe>("bambu_network_start_subscribe");
+    fp_start_print     = load_fn<fn_start_print>("bambu_network_start_print");
 
     if (!fp_create_agent || !fp_change_user || !fp_connect_server) {
         dlclose(g_lib);
@@ -351,6 +402,118 @@ int bambu_shim_set_on_subscribe_failure_fn(
         if (g_sub_fail_cb) g_sub_fail_cb(topic.c_str(), g_sub_fail_cb_ctx);
     };
     return fp_set_sub_fail_cb(agent, wrapper);
+}
+
+// ---------------------------------------------------------------------------
+// Print support
+// ---------------------------------------------------------------------------
+
+// C-compatible PrintParams (all const char* instead of std::string)
+struct BambuShimPrintParams {
+    const char* dev_id;
+    const char* task_name;
+    const char* project_name;
+    const char* preset_name;
+    const char* filename;
+    const char* config_filename;
+    int         plate_index;
+    const char* ftp_folder;
+    const char* ams_mapping;
+    const char* ams_mapping2;
+    const char* ams_mapping_info;
+    const char* connection_type;
+    const char* print_type;
+    int         task_bed_leveling;
+    int         task_flow_cali;
+    int         task_vibration_cali;
+    int         task_layer_inspect;
+    int         task_record_timelapse;
+    int         task_use_ams;
+    const char* task_bed_type;
+};
+
+// Print progress callback: (stage, code, msg, ctx)
+typedef void (*shim_on_print_progress_fn)(int, int, const char*, void*);
+
+// Result struct filled by start_print
+struct BambuShimPrintResult {
+    int return_code;    // from fp_start_print
+    int print_result;   // from the completion callback (-999 = never fired)
+    int finished;       // 1 if completion callback fired
+};
+
+int bambu_shim_start_print(
+    void* agent,
+    const BambuShimPrintParams* p,
+    shim_on_print_progress_fn progress_cb,
+    void* progress_ctx,
+    BambuShimPrintResult* result
+) {
+    if (!fp_start_print) return -1;
+
+    // Convert C params to C++ PrintParams
+    PrintParams params;
+    params.dev_id            = p->dev_id ? p->dev_id : "";
+    params.task_name         = p->task_name ? p->task_name : "";
+    params.project_name      = p->project_name ? p->project_name : "";
+    params.preset_name       = p->preset_name ? p->preset_name : "";
+    params.filename          = p->filename ? p->filename : "";
+    params.config_filename   = p->config_filename ? p->config_filename : "";
+    params.plate_index       = p->plate_index;
+    params.ftp_folder        = p->ftp_folder ? p->ftp_folder : "sdcard/";
+    params.ftp_file          = "";
+    params.ftp_file_md5      = "";
+    params.nozzle_mapping    = "[]";
+    params.ams_mapping       = p->ams_mapping ? p->ams_mapping : "[0,1,2,3]";
+    params.ams_mapping2      = p->ams_mapping2 ? p->ams_mapping2 : "";
+    params.ams_mapping_info  = p->ams_mapping_info ? p->ams_mapping_info : "";
+    params.nozzles_info      = "";
+    params.connection_type   = p->connection_type ? p->connection_type : "cloud";
+    params.comments          = "";
+    params.origin_profile_id = 0;
+    params.stl_design_id     = 0;
+    params.origin_model_id   = "";
+    params.print_type        = p->print_type ? p->print_type : "from_normal";
+    params.dst_file          = "";
+    params.dev_name          = "";
+    params.dev_ip            = "";
+    params.use_ssl_for_ftp   = false;
+    params.use_ssl_for_mqtt  = true;
+    params.username          = "";
+    params.password          = "";
+    params.task_bed_leveling     = p->task_bed_leveling != 0;
+    params.task_flow_cali        = p->task_flow_cali != 0;
+    params.task_vibration_cali   = p->task_vibration_cali != 0;
+    params.task_layer_inspect    = p->task_layer_inspect != 0;
+    params.task_record_timelapse = p->task_record_timelapse != 0;
+    params.task_use_ams          = p->task_use_ams != 0;
+    params.task_bed_type         = p->task_bed_type ? p->task_bed_type : "auto";
+    params.extra_options         = "";
+    params.auto_bed_leveling     = 0;
+    params.auto_flow_cali        = 0;
+    params.auto_offset_cali      = 0;
+    params.extruder_cali_manual_mode = -1;
+    params.task_ext_change_assist = false;
+    params.try_emmc_print         = false;
+
+    // Track result
+    result->print_result = -999;
+    result->finished = 0;
+
+    OnUpdateStatusFn update_fn = [progress_cb, progress_ctx, result](
+        int status, int code, std::string msg
+    ) {
+        if (progress_cb)
+            progress_cb(status, code, msg.c_str(), progress_ctx);
+        if (status == 6) { result->print_result = 0; result->finished = 1; }
+        else if (status == 7) { result->print_result = code; result->finished = 1; }
+    };
+
+    WasCancelledFn cancel_fn = []() -> bool { return false; };
+    OnWaitFn wait_fn = [](int, std::string) -> bool { return false; };
+
+    result->return_code = fp_start_print(agent, params, update_fn, cancel_fn, wait_fn);
+    return 0;
 }
 
 } // extern "C"
