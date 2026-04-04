@@ -16,6 +16,30 @@ use clap::{Parser, Subcommand};
 
 use agent::{BambuAgent, Credentials};
 
+/// Saved original stdout fd, used to restore after suppressing library noise.
+static mut SAVED_STDOUT: i32 = -1;
+
+/// Suppress stdout to hide library noise (e.g. "use_count = 4").
+/// Logs (tracing) go to stderr and are unaffected.
+fn suppress_stdout() {
+    unsafe {
+        SAVED_STDOUT = libc::dup(1);
+        let devnull = libc::open(b"/dev/null\0".as_ptr() as *const _, libc::O_WRONLY);
+        if devnull >= 0 {
+            libc::dup2(devnull, 1);
+            libc::close(devnull);
+        }
+    }
+}
+
+/// Fast exit that skips atexit handlers, avoiding .so MQTT thread cleanup hangs.
+fn fast_exit(code: i32) -> ! {
+    use std::io::Write;
+    let _ = io::stdout().flush();
+    let _ = io::stderr().flush();
+    unsafe { libc::_exit(code) }
+}
+
 #[derive(Parser)]
 #[command(name = "bambu-bridge", about = "Bambu Lab printer bridge")]
 struct Cli {
@@ -109,13 +133,17 @@ fn cmd_status(agent: &BambuAgent, device_id: &str) {
     }
 
     let messages = agent.drain_messages();
+
+    // Restore stdout (was suppressed to hide library noise like "use_count = 4")
+    unsafe { libc::dup2(SAVED_STDOUT, 1) };
+
     match best_message(&messages) {
         Some(msg) => {
             println!("{}", msg.payload);
         }
         None => {
             eprintln!("error: no status received from printer {device_id}");
-            process::exit(2);
+            fast_exit(2);
         }
     }
 }
@@ -147,7 +175,8 @@ fn cmd_watch(agent: &BambuAgent, device_id: &str) {
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    // Signal readiness
+    // Restore stdout and signal readiness
+    unsafe { libc::dup2(SAVED_STDOUT, 1) };
     println!("{{\"ready\":true}}");
     io::stdout().flush().unwrap();
 
@@ -226,20 +255,23 @@ fn main() {
             device_id,
             credentials,
         } => {
+            suppress_stdout();
             let creds = load_credentials(credentials);
             let agent = init_agent(&cli.lib_path, &creds);
             cmd_status(&agent, device_id);
-            // Fast exit to avoid MQTT thread cleanup hangs
-            process::exit(0);
+            // Fast exit — _exit() skips atexit handlers, avoids .so MQTT
+            // thread cleanup hangs (same as C++ bridge's fast_exit).
+            fast_exit(0);
         }
         Command::Watch {
             device_id,
             credentials,
         } => {
+            suppress_stdout();
             let creds = load_credentials(credentials);
             let agent = init_agent(&cli.lib_path, &creds);
             cmd_watch(&agent, device_id);
-            process::exit(0);
+            fast_exit(0);
         }
     }
 }
