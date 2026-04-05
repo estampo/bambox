@@ -22,8 +22,7 @@ log = logging.getLogger(__name__)
 DOCKER_IMAGE = "rkneills/curaengine:latest"
 CURAENGINE_BIN = "/CuraEngine/build/CuraEngine"
 FDMPRINTER_URL = (
-    "https://raw.githubusercontent.com/Ultimaker/Cura/3.6"
-    "/resources/definitions/fdmprinter.def.json"
+    "https://raw.githubusercontent.com/Ultimaker/Cura/3.6/resources/definitions/fdmprinter.def.json"
 )
 
 # Base definitions directory inside the Docker image (set up at build time
@@ -126,9 +125,7 @@ def _build_printer_def(
             "machine_height": {"default_value": profile.machine_height},
             "machine_heated_bed": {"default_value": profile.machine_heated_bed},
             "machine_center_is_zero": {"default_value": False},
-            "machine_gcode_flavor": {
-                "default_value": "RepRap (Marlin/Sprinter)"
-            },
+            "machine_gcode_flavor": {"default_value": "RepRap (Marlin/Sprinter)"},
             "machine_start_gcode": {"default_value": start_gcode},
             "machine_end_gcode": {"default_value": end_gcode},
             "material_print_temp_prepend": {"default_value": False},
@@ -321,9 +318,7 @@ def slice_stl(
         extruder_path = tmp / "bambu_p1s_extruder_0.def.json"
         extruder_path.write_text(json.dumps(extruder_def, indent=2))
 
-        printer_def = _build_printer_def(
-            profile, start_gcode, end_gcode, "bambu_p1s_extruder_0"
-        )
+        printer_def = _build_printer_def(profile, start_gcode, end_gcode, "bambu_p1s_extruder_0")
         printer_path = tmp / "bambu_p1s.def.json"
         printer_path.write_text(json.dumps(printer_def, indent=2))
 
@@ -334,9 +329,7 @@ def slice_stl(
         # Build baked Docker image (bind mounts don't work in all envs)
         dockerfile = tmp / "Dockerfile"
         dockerfile.write_text(
-            f"FROM {DOCKER_IMAGE}\n"
-            f"COPY . /opt/defs/\n"
-            f"COPY {stl_path.name} /tmp/input.stl\n"
+            f"FROM {DOCKER_IMAGE}\nCOPY . /opt/defs/\nCOPY {stl_path.name} /tmp/input.stl\n"
         )
 
         # Copy STL into build context
@@ -348,55 +341,56 @@ def slice_stl(
         tag = "bambu-3mf-cura-tmp"
         build_cmd = ["docker", "build", "-t", tag, str(tmp)]
         log.info("Building CuraEngine Docker image: %s", " ".join(build_cmd))
-        result = subprocess.run(
-            build_cmd, capture_output=True, text=True, timeout=120
-        )
+        result = subprocess.run(build_cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
-            raise RuntimeError(
-                f"Docker build failed:\n{result.stderr[:500]}"
-            )
+            raise RuntimeError(f"Docker build failed:\n{result.stderr[:500]}")
 
         # Slice — redirect stderr to /dev/null to keep only the gcode on stdout
         slice_cmd = [
-            "docker", "run", "--rm", "--entrypoint", "/bin/bash", tag, "-c",
-            " ".join([
-                CURAENGINE_BIN, "slice",
-                "-j", f"{_DEFS_DIR}/bambu_p1s.def.json",
-                "-o", "/tmp/output.gcode",
-                *_settings_flags(profile),
-                "-l", "/tmp/input.stl",
-                "2>/dev/null",
-                "&& cat /tmp/output.gcode",
-            ]),
+            "docker",
+            "run",
+            "--rm",
+            "--entrypoint",
+            "/bin/bash",
+            tag,
+            "-c",
+            " ".join(
+                [
+                    CURAENGINE_BIN,
+                    "slice",
+                    "-j",
+                    f"{_DEFS_DIR}/bambu_p1s.def.json",
+                    "-o",
+                    "/tmp/output.gcode",
+                    *_settings_flags(profile),
+                    "-l",
+                    "/tmp/input.stl",
+                    "2>/dev/null",
+                    "&& cat /tmp/output.gcode",
+                ]
+            ),
         ]
 
         log.info("Slicing with CuraEngine")
-        result = subprocess.run(
-            slice_cmd, capture_output=True, timeout=300
-        )
-        if result.returncode != 0:
-            stderr = result.stderr.decode(errors="replace") if result.stderr else ""
-            stdout = result.stdout.decode(errors="replace") if result.stdout else ""
+        slice_result = subprocess.run(slice_cmd, capture_output=True, timeout=300)
+        if slice_result.returncode != 0:
+            stderr = slice_result.stderr.decode(errors="replace") if slice_result.stderr else ""
+            stdout = slice_result.stdout.decode(errors="replace") if slice_result.stdout else ""
             raise RuntimeError(
-                f"CuraEngine failed (exit {result.returncode}):\n"
-                f"{stderr[:500]}\n{stdout[:500]}"
+                f"CuraEngine failed (exit {slice_result.returncode}):\n{stderr[:500]}\n{stdout[:500]}"
             )
 
         # Extract G-code from stdout (cat output)
-        gcode = result.stdout
+        gcode = slice_result.stdout
         if not gcode or len(gcode) < 100:
-            stderr = result.stderr.decode(errors="replace") if result.stderr else ""
-            raise RuntimeError(
-                f"CuraEngine produced no output:\n{stderr[:500]}"
-            )
+            stderr = slice_result.stderr.decode(errors="replace") if slice_result.stderr else ""
+            raise RuntimeError(f"CuraEngine produced no output:\n{stderr[:500]}")
 
         output_path.write_bytes(gcode)
         log.info("CuraEngine output: %s (%d bytes)", output_path, len(gcode))
 
         # Cleanup temp image
-        subprocess.run(
-            ["docker", "rmi", tag], capture_output=True, timeout=30
-        )
+        subprocess.run(["docker", "rmi", tag], capture_output=True, timeout=30)
 
     return output_path
 

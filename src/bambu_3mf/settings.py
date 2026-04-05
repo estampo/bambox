@@ -47,9 +47,7 @@ def _filament_profile_path(filament_type: str) -> Path:
     path = _DATA_DIR / f"filament_{normalized}.json"
     if not path.exists():
         avail = available_filaments()
-        raise ValueError(
-            f"Unknown filament type '{filament_type}'. Available: {avail}"
-        )
+        raise ValueError(f"Unknown filament type '{filament_type}'. Available: {avail}")
     return path
 
 
@@ -91,7 +89,7 @@ def build_project_settings(
     base = _load_json(_machine_profile_path(machine))
 
     # Load varying keys list
-    varying_keys: list[str] = _load_json(_DATA_DIR / "_varying_keys.json")
+    varying_keys: list[str] = list(_load_json(_DATA_DIR / "_varying_keys.json"))
 
     # Pad filament list to min_slots
     if not filaments:

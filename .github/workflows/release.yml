@@ -1,0 +1,218 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.2.0) — use only as fallback"
+        required: true
+
+jobs:
+  # ── Detect release PR merge on push to main ─────────────────────────
+  detect-release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.check.outputs.is_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Check if this is a release PR merge
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ github.sha }}"
+          echo "Checking commit $SHA for associated release PR..."
+
+          BRANCHES=$(gh api "repos/${{ github.repository }}/commits/${SHA}/pulls" \
+            --jq '.[].head.ref')
+          echo "Associated PR branches: ${BRANCHES:-<none>}"
+
+          VERSION=$(echo "$BRANCHES" \
+            | grep -oP '^release/v\K\d+\.\d+\.\d+$' \
+            | head -1 || true)
+
+          if [[ -n "$VERSION" ]]; then
+            if gh api "repos/${{ github.repository }}/git/refs/tags/v${VERSION}" >/dev/null 2>&1; then
+              echo "::warning::Tag v${VERSION} already exists — skipping"
+              echo "is_release=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "is_release=true" >> "$GITHUB_OUTPUT"
+              echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+              echo "::notice::Detected release PR merge for v${VERSION}"
+            fi
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Verify version ──────────────────────────────────────────────────
+  version:
+    needs: detect-release
+    if: |
+      always() &&
+      ((needs.detect-release.outputs.is_release == 'true') ||
+       github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Extract and verify version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            VERSION="${{ needs.detect-release.outputs.version }}"
+          else
+            TAG="${{ inputs.tag }}"
+            VERSION="${TAG#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          TOML_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [[ "$TOML_VERSION" != "$VERSION" ]]; then
+            echo "::error::Version mismatch: pyproject.toml=$TOML_VERSION, release=$VERSION"
+            exit 1
+          fi
+          echo "::notice::Releasing version $VERSION"
+
+  # ── Build package ───────────────────────────────────────────────────
+  build-pypi:
+    needs: version
+    if: always() && needs.version.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Build and validate package
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pypi-dist
+          path: dist/
+          retention-days: 5
+
+  # ── Dry-run: validate on TestPyPI before real publish ───────────────
+  dry-run-publish:
+    needs: [version, build-pypi]
+    if: always() && needs.version.result == 'success' && needs.build-pypi.result == 'success'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: pypi-dist
+          path: dist/
+
+      - name: Publish to TestPyPI (dry-run gate)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+  # ── Create tag only after TestPyPI succeeds ─────────────────────────
+  create-tag:
+    needs: [version, detect-release, dry-run-publish]
+    if: |
+      always() &&
+      needs.version.result == 'success' &&
+      needs.dry-run-publish.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Create and push tag (if it doesn't exist)
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          if gh api "repos/${{ github.repository }}/git/refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "::notice::Tag v${VERSION} already exists — skipping"
+          else
+            git tag "v${VERSION}"
+            git push origin "v${VERSION}"
+            echo "::notice::Created tag v${VERSION}"
+          fi
+
+  # ── Publish to PyPI ─────────────────────────────────────────────────
+  publish-pypi:
+    needs: [version, create-tag, dry-run-publish]
+    if: |
+      always() &&
+      needs.dry-run-publish.result == 'success' &&
+      (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: pypi-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  # ── Create GitHub Release ───────────────────────────────────────────
+  github-release:
+    needs: [version, publish-pypi]
+    if: |
+      always() &&
+      needs.version.result == 'success' &&
+      needs.publish-pypi.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: pypi-dist
+          path: dist/
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          BODY=$(awk "/^## ${VERSION//./\\.} /{found=1; next} /^## /{if(found) exit} found{print}" CHANGELOG.md)
+          echo "$BODY" > /tmp/release-body.md
+          echo "Changelog body:"
+          cat /tmp/release-body.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          WHEEL=$(ls dist/*.whl 2>/dev/null | head -1)
+          ARGS=(gh release create "v${VERSION}" --title "v${VERSION}" --notes-file /tmp/release-body.md)
+          if [[ -n "$WHEEL" ]]; then
+            ARGS+=("$WHEEL")
+          fi
+          "${ARGS[@]}"

@@ -146,7 +146,10 @@ def _run_bridge_baked(
         tag = "bambu-3mf-bridge-tmp"
         build = subprocess.run(
             ["docker", "build", "-t", tag, "."],
-            capture_output=True, text=True, cwd=str(tmpdir), timeout=60,
+            capture_output=True,
+            text=True,
+            cwd=str(tmpdir),
+            timeout=60,
         )
         if build.returncode != 0:
             raise RuntimeError(f"Docker build failed: {build.stderr[:500]}")
@@ -253,8 +256,7 @@ def _build_ams_mapping(
         if ams_trays:
             candidates = [
                 (
-                    (2 if t["type"] == fil_type else 0)
-                    + (1 if t["color"].upper() == color else 0),
+                    (2 if t["type"] == fil_type else 0) + (1 if t["color"].upper() == color else 0),
                     t,
                 )
                 for t in ams_trays

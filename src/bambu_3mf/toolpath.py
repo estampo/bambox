@@ -101,7 +101,7 @@ def rectangular_prism(
         lh = first_layer_height if layer_idx == 0 else layer_height
         speed = first_layer_speed if layer_idx == 0 else print_speed
 
-        lines.append(f"; CHANGE_LAYER")
+        lines.append("; CHANGE_LAYER")
         lines.append(f"; Z_HEIGHT: {z}")
         lines.append(f"; LAYER_HEIGHT: {lh}")
 

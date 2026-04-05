@@ -17,6 +17,17 @@ classifiers = [
     "Topic :: Printing",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+    "jinja2>=3.1.0",
+    "pillow>=10.0.0",
+    "towncrier>=24.7.0",
+]
+
 [project.scripts]
 bambu-3mf = "bambu_3mf.cli:main"
 
@@ -24,4 +35,29 @@ bambu-3mf = "bambu_3mf.cli:main"
 line-length = 100
 
 [tool.mypy]
-strict = true
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_configs = true
+check_untyped_defs = true
+disable_error_code = ["import-untyped"]
+
+[tool.towncrier]
+directory = "changes"
+filename = "CHANGELOG.md"
+title_format = "## {version} — {project_date}"
+issue_format = "[#{issue}](https://github.com/estampo/bambu-3mf/pull/{issue})"
+
+  [[tool.towncrier.type]]
+  directory = "feature"
+  name = "Features"
+  showcontent = true
+
+  [[tool.towncrier.type]]
+  directory = "bugfix"
+  name = "Bugfixes"
+  showcontent = true
+
+  [[tool.towncrier.type]]
+  directory = "misc"
+  name = "Misc"
+  showcontent = true

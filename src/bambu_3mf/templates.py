@@ -125,10 +125,10 @@ def render_template(
         def __str__(self) -> str:
             return ""
 
-        def __int__(self) -> int:
+        def __int__(self) -> int:  # type: ignore[override]
             return 0
 
-        def __float__(self) -> float:
+        def __float__(self) -> float:  # type: ignore[override]
             return 0.0
 
         def __bool__(self) -> bool:
