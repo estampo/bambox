@@ -93,7 +93,7 @@ def _translate_cura(text: str) -> str:
     for m in re.finditer(r";LAYER:(\d+)", text):
         layer_n = int(m.group(1))
         # Find the next TIME_ELAPSED after this layer marker
-        rest = text[m.end():m.end() + 5000]
+        rest = text[m.end() : m.end() + 5000]
         te = re.search(r";TIME_ELAPSED:([\d.]+)", rest)
         if te:
             layer_elapsed[layer_n] = float(te.group(1))

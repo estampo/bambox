@@ -69,7 +69,10 @@ def _cmd_print(args: argparse.Namespace) -> None:
                     break
 
     if not device_id:
-        print("Error: --device is required (or set a printer serial in credentials.toml)", file=sys.stderr)
+        print(
+            "Error: --device is required (or set a printer serial in credentials.toml)",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     project_name = args.project or threemf.stem
@@ -83,14 +86,16 @@ def _cmd_print(args: argparse.Namespace) -> None:
             sys.exit(1)
         slot, ftype, color = parts
         phys_slot = int(slot)
-        ams_trays.append({
-            "phys_slot": phys_slot,
-            "ams_id": phys_slot // 4,
-            "slot_id": phys_slot % 4,
-            "type": ftype,
-            "color": color.upper(),
-            "tray_info_idx": "",
-        })
+        ams_trays.append(
+            {
+                "phys_slot": phys_slot,
+                "ams_id": phys_slot // 4,
+                "slot_id": phys_slot % 4,
+                "type": ftype,
+                "color": color.upper(),
+                "tray_info_idx": "",
+            }
+        )
 
     print(f"Sending {threemf.name} to {device_id}...")
     try:
@@ -130,7 +135,9 @@ def _cmd_status(args: argparse.Namespace) -> None:
         print(f"State: {state}")
         print(f"Nozzle: {nozzle}°C  Bed: {bed}°C")
         if status.get("mc_percent"):
-            print(f"Progress: {status['mc_percent']}%  ETA: {status.get('mc_remaining_time', '?')}min")
+            print(
+                f"Progress: {status['mc_percent']}%  ETA: {status.get('mc_remaining_time', '?')}min"
+            )
         if status.get("subtask_name"):
             print(f"Job: {status['subtask_name']}")
 
@@ -168,14 +175,18 @@ def main(argv: list[str] | None = None) -> None:
     print_p.add_argument("threemf", type=Path, help="Input .gcode.3mf file")
     print_p.add_argument("-d", "--device", default="", help="Printer serial number")
     print_p.add_argument(
-        "-c", "--credentials", default=None,
+        "-c",
+        "--credentials",
+        default=None,
         help="Path to credentials.toml (default: ~/.config/estampo/credentials.toml)",
     )
     print_p.add_argument("--project", default=None, help="Project name shown in cloud")
     print_p.add_argument("--timeout", type=int, default=180)
     print_p.add_argument("--no-ams-mapping", action="store_true", help="Skip AMS mapping")
     print_p.add_argument(
-        "--ams-tray", action="append", metavar="SLOT:TYPE:COLOR",
+        "--ams-tray",
+        action="append",
+        metavar="SLOT:TYPE:COLOR",
         help="Manually specify AMS tray (e.g. '2:PETG-CF:2850E0'). Repeatable.",
     )
 
@@ -183,7 +194,9 @@ def main(argv: list[str] | None = None) -> None:
     status_p = sub.add_parser("status", help="Query printer status")
     status_p.add_argument("device", help="Printer serial number")
     status_p.add_argument(
-        "-c", "--credentials", default=None,
+        "-c",
+        "--credentials",
+        default=None,
         help="Path to credentials.toml",
     )
 

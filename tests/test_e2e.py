@@ -15,7 +15,6 @@ import zipfile
 from io import BytesIO
 from pathlib import Path
 
-import pytest
 
 from bambu_3mf.assemble import assemble_gcode
 from bambu_3mf.pack import FilamentInfo, SliceInfo, pack_gcode_3mf
@@ -98,8 +97,8 @@ class TestStartTemplateRendering:
 
     def test_volumetric_speed_calculation(self) -> None:
         result = render_template("p1s_start.gcode.j2", P1S_CONTEXT)
-        assert "F4800" in result   # 12/(0.3*0.5)*60
-        assert "F1200" in result   # 12/(0.3*0.5)/4*60
+        assert "F4800" in result  # 12/(0.3*0.5)*60
+        assert "F1200" in result  # 12/(0.3*0.5)/4*60
 
     def test_bed_leveling_coordinates(self) -> None:
         result = render_template("p1s_start.gcode.j2", P1S_CONTEXT)
@@ -143,11 +142,11 @@ class TestAssemble:
             filament_end_gcode="M106 P3 S0",
         )
         lines = result.splitlines()
-        start_idx = next(i for i, l in enumerate(lines) if "M104 S75" in l)
-        fil_start_idx = next(i for i, l in enumerate(lines) if "M106 P3 S255" in l)
-        toolpath_idx = next(i for i, l in enumerate(lines) if "G1 X10" in l)
-        fil_end_idx = next(i for i, l in enumerate(lines) if "M106 P3 S0" in l)
-        end_idx = next(i for i, l in enumerate(lines) if "M140 S0" in l)
+        start_idx = next(i for i, line in enumerate(lines) if "M104 S75" in line)
+        fil_start_idx = next(i for i, line in enumerate(lines) if "M106 P3 S255" in line)
+        toolpath_idx = next(i for i, line in enumerate(lines) if "G1 X10" in line)
+        fil_end_idx = next(i for i, line in enumerate(lines) if "M106 P3 S0" in line)
+        end_idx = next(i for i, line in enumerate(lines) if "M140 S0" in line)
         assert start_idx < fil_start_idx < toolpath_idx < fil_end_idx < end_idx
 
     def test_filament_gcode_optional(self) -> None:
@@ -186,12 +185,11 @@ class TestEndToEnd:
             nozzle_diameter=0.4,
             prediction=60,
             weight=0.1,
-            filaments=[
-                FilamentInfo(slot=1, filament_type="PLA", used_m=0.05, used_g=0.1)
-            ],
+            filaments=[FilamentInfo(slot=1, filament_type="PLA", used_m=0.05, used_g=0.1)],
         )
         pack_gcode_3mf(
-            gcode.encode(), buf,
+            gcode.encode(),
+            buf,
             slice_info=info,
             project_settings=PROJECT_SETTINGS,
         )
@@ -227,9 +225,7 @@ class TestEndToEnd:
         start = render_template("p1s_start.gcode.j2", P1S_CONTEXT)
         end = render_template("p1s_end.gcode.j2", P1S_CONTEXT)
 
-        gcode = assemble_gcode(
-            start_gcode=start, toolpath=SYNTHETIC_TOOLPATH, end_gcode=end
-        )
+        gcode = assemble_gcode(start_gcode=start, toolpath=SYNTHETIC_TOOLPATH, end_gcode=end)
 
         # Machine init
         assert ";===== machine: P1S" in gcode
@@ -245,9 +241,7 @@ class TestEndToEnd:
         start = render_template("p1s_start.gcode.j2", P1S_CONTEXT)
         end = render_template("p1s_end.gcode.j2", P1S_CONTEXT)
 
-        gcode = assemble_gcode(
-            start_gcode=start, toolpath=SYNTHETIC_TOOLPATH, end_gcode=end
-        )
+        gcode = assemble_gcode(start_gcode=start, toolpath=SYNTHETIC_TOOLPATH, end_gcode=end)
 
         start_pos = gcode.index(";===== machine: P1S")
         toolpath_pos = gcode.index("M981 S1 P20000")

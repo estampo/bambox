@@ -2,7 +2,14 @@
 
 from bambu_3mf.assemble import assemble_gcode
 from bambu_3mf.gcode_compat import is_bbl_gcode, translate_to_bbl
-from bambu_3mf.pack import FilamentInfo, ObjectInfo, SliceInfo, WarningInfo, fixup_project_settings, pack_gcode_3mf
+from bambu_3mf.pack import (
+    FilamentInfo,
+    ObjectInfo,
+    SliceInfo,
+    WarningInfo,
+    fixup_project_settings,
+    pack_gcode_3mf,
+)
 
 __all__ = [
     "assemble_gcode",

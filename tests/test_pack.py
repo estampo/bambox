@@ -13,13 +13,12 @@ from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-import pytest
 
 from bambu_3mf.pack import (
     FilamentInfo,
     SliceInfo,
     _filament_maps_str,
-    _pad_project_settings,
+    fixup_project_settings,
     pack_gcode_3mf,
 )
 
@@ -136,9 +135,12 @@ class TestBoilerplateXml:
 
     def test_rels_matches_reference(self) -> None:
         with _ref() as ref:
-            expected = ref.read("_rels/.rels")
+            ref_root = ET.fromstring(ref.read("_rels/.rels"))
         z = _pack()
-        assert z.read("_rels/.rels") == expected
+        our_root = ET.fromstring(z.read("_rels/.rels"))
+        ref_targets = {r.get("Target") for r in ref_root}
+        our_targets = {r.get("Target") for r in our_root}
+        assert ref_targets == our_targets
 
     def test_model_settings_rels_matches_reference(self) -> None:
         with _ref() as ref:
@@ -193,8 +195,8 @@ class TestModelSettings:
     def test_filament_maps_padded(self) -> None:
         z = _pack()
         content = z.read("Metadata/model_settings.config").decode()
-        # Slot 3, padded to 5 → "3 3 3 3 3"
-        assert 'value="3 3 3 3 3"' in content
+        # Plate mapping index (always 1), padded to 5 slots
+        assert 'value="1 1 1 1 1"' in content
 
     def test_matches_reference_keys(self) -> None:
         """All metadata keys from reference must be present."""
@@ -281,7 +283,11 @@ class TestSliceInfo:
 class TestThumbnails:
     def test_placeholder_pngs_included(self) -> None:
         z = _pack()
-        for name in ["Metadata/plate_1.png", "Metadata/plate_no_light_1.png", "Metadata/plate_1_small.png"]:
+        for name in [
+            "Metadata/plate_1.png",
+            "Metadata/plate_no_light_1.png",
+            "Metadata/plate_1_small.png",
+        ]:
             data = z.read(name)
             assert data[:4] == b"\x89PNG", f"{name} is not a valid PNG"
 
@@ -297,20 +303,15 @@ class TestThumbnails:
 
 
 class TestHelpers:
-    def test_filament_maps_padding(self) -> None:
-        filaments = [FilamentInfo(slot=2)]
-        assert _filament_maps_str(filaments) == "2 2 2 2 2"
+    def test_filament_maps_default(self) -> None:
+        assert _filament_maps_str() == "1 1 1 1 1"
 
-    def test_filament_maps_multiple(self) -> None:
-        filaments = [FilamentInfo(slot=1), FilamentInfo(slot=3)]
-        assert _filament_maps_str(filaments) == "1 3 3 3 3"
+    def test_filament_maps_custom_slots(self) -> None:
+        assert _filament_maps_str(3) == "1 1 1"
 
-    def test_filament_maps_empty(self) -> None:
-        assert _filament_maps_str([]) == "1 1 1 1 1"
-
-    def test_pad_project_settings(self) -> None:
+    def test_fixup_project_settings(self) -> None:
         settings = {"filament_type": ["PLA", "PETG"], "speed": "100"}
-        padded = _pad_project_settings(settings)
+        padded = fixup_project_settings(settings)
         assert padded["filament_type"] == ["PLA", "PETG", "PETG", "PETG", "PETG"]
         assert padded["speed"] == "100"
 

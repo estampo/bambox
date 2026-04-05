@@ -10,8 +10,8 @@ import hashlib
 import json
 import zipfile
 from dataclasses import dataclass, field
-from io import BytesIO
 from pathlib import Path
+from typing import IO
 
 # Minimum AMS slot count for a P1S (4 AMS + 1 external spool).
 # All per-filament arrays in project_settings must be padded to this length.
@@ -75,6 +75,7 @@ MODEL_XML = """\
 </model>
 """
 
+
 def _model_settings_xml(filament_maps: str, filament_volume_maps: str = "") -> str:
     """Generate Metadata/model_settings.config."""
     lines = [
@@ -89,18 +90,21 @@ def _model_settings_xml(filament_maps: str, filament_volume_maps: str = "") -> s
     ]
     if filament_volume_maps:
         lines.append(f'    <metadata key="filament_volume_maps" value="{filament_volume_maps}"/>')
-    lines.extend([
-        '    <metadata key="gcode_file" value="Metadata/plate_1.gcode"/>',
-        '    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>',
-        '    <metadata key="thumbnail_no_light_file" value="Metadata/plate_no_light_1.png"/>',
-        '    <metadata key="top_file" value="Metadata/top_1.png"/>',
-        '    <metadata key="pick_file" value="Metadata/pick_1.png"/>',
-        '    <metadata key="pattern_bbox_file" value="Metadata/plate_1.json"/>',
-        "  </plate>",
-        "</config>",
-        "",
-    ])
+    lines.extend(
+        [
+            '    <metadata key="gcode_file" value="Metadata/plate_1.gcode"/>',
+            '    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>',
+            '    <metadata key="thumbnail_no_light_file" value="Metadata/plate_no_light_1.png"/>',
+            '    <metadata key="top_file" value="Metadata/top_1.png"/>',
+            '    <metadata key="pick_file" value="Metadata/pick_1.png"/>',
+            '    <metadata key="pattern_bbox_file" value="Metadata/plate_1.json"/>',
+            "  </plate>",
+            "</config>",
+            "",
+        ]
+    )
     return "\n".join(lines)
+
 
 MODEL_SETTINGS_RELS_XML = """\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -213,26 +217,32 @@ def _slice_info_xml(info: SliceInfo) -> str:
     if info.nozzle_volume_type is not None:
         lines.append(f'    <metadata key="nozzle_volume_type" value="{info.nozzle_volume_type}"/>')
 
-    lines.extend([
-        f'    <metadata key="printer_model_id" value="{info.printer_model_id}"/>',
-        f'    <metadata key="nozzle_diameters" value="{info.nozzle_diameter}"/>',
-        f'    <metadata key="timelapse_type" value="{info.timelapse_type}"/>',
-        f'    <metadata key="prediction" value="{info.prediction}"/>',
-        f'    <metadata key="weight" value="{info.weight:.2f}"/>',
-    ])
+    lines.extend(
+        [
+            f'    <metadata key="printer_model_id" value="{info.printer_model_id}"/>',
+            f'    <metadata key="nozzle_diameters" value="{info.nozzle_diameter}"/>',
+            f'    <metadata key="timelapse_type" value="{info.timelapse_type}"/>',
+            f'    <metadata key="prediction" value="{info.prediction}"/>',
+            f'    <metadata key="weight" value="{info.weight:.2f}"/>',
+        ]
+    )
 
     if info.first_layer_time is not None:
         lines.append(f'    <metadata key="first_layer_time" value="{info.first_layer_time}"/>')
 
-    lines.extend([
-        f'    <metadata key="outside" value="{str(info.outside).lower()}"/>',
-        f'    <metadata key="support_used" value="{str(info.support_used).lower()}"/>',
-        f'    <metadata key="label_object_enabled" value="{str(info.label_object_enabled).lower()}"/>',
-        f'    <metadata key="filament_maps" value="{filament_maps}"/>',
-    ])
+    lines.extend(
+        [
+            f'    <metadata key="outside" value="{str(info.outside).lower()}"/>',
+            f'    <metadata key="support_used" value="{str(info.support_used).lower()}"/>',
+            f'    <metadata key="label_object_enabled" value="{str(info.label_object_enabled).lower()}"/>',
+            f'    <metadata key="filament_maps" value="{filament_maps}"/>',
+        ]
+    )
 
     if info.limit_filament_maps:
-        lines.append(f'    <metadata key="limit_filament_maps" value="{info.limit_filament_maps}"/>')
+        lines.append(
+            f'    <metadata key="limit_filament_maps" value="{info.limit_filament_maps}"/>'
+        )
 
     for obj in info.objects:
         lines.append(
@@ -255,8 +265,7 @@ def _slice_info_xml(info: SliceInfo) -> str:
 
     for w in info.warnings:
         lines.append(
-            f'    <warning msg="{w.msg}" level="{w.level}"'
-            f' error_code ="{w.error_code}"  />'
+            f'    <warning msg="{w.msg}" level="{w.level}" error_code ="{w.error_code}"  />'
         )
 
     if info.layer_filament_lists:
@@ -268,11 +277,13 @@ def _slice_info_xml(info: SliceInfo) -> str:
             )
         lines.append("    </layer_filament_lists>")
 
-    lines.extend([
-        "  </plate>",
-        "</config>",
-        "",  # trailing newline
-    ])
+    lines.extend(
+        [
+            "  </plate>",
+            "</config>",
+            "",  # trailing newline
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -287,12 +298,8 @@ def _plate_json(info: SliceInfo, filaments: list[FilamentInfo]) -> str:
         data.update(info.plate_data)
 
     # Fill in defaults for keys not already present
-    data.setdefault(
-        "filament_colors", [f.color for f in filaments] if filaments else ["#F2754E"]
-    )
-    data.setdefault(
-        "filament_ids", [f.slot - 1 for f in filaments] if filaments else [0]
-    )
+    data.setdefault("filament_colors", [f.color for f in filaments] if filaments else ["#F2754E"])
+    data.setdefault("filament_ids", [f.slot - 1 for f in filaments] if filaments else [0])
     data.setdefault("first_extruder", filaments[0].slot - 1 if filaments else 0)
     data.setdefault("is_seq_print", False)
     data.setdefault("nozzle_diameter", info.nozzle_diameter)
@@ -301,7 +308,9 @@ def _plate_json(info: SliceInfo, filaments: list[FilamentInfo]) -> str:
     return json.dumps(data, separators=(",", ":"))
 
 
-def fixup_project_settings(settings: dict[str, object], min_slots: int = MIN_SLOTS) -> dict[str, object]:
+def fixup_project_settings(
+    settings: dict[str, object], min_slots: int = MIN_SLOTS
+) -> dict[str, object]:
     """Make project_settings Bambu Connect-ready.
 
     1. Add required keys that OrcaSlicer CLI ``--min-save`` omits.
@@ -328,7 +337,7 @@ def fixup_project_settings(settings: dict[str, object], min_slots: int = MIN_SLO
 
 def pack_gcode_3mf(
     gcode: bytes,
-    output: Path | BytesIO,
+    output: Path | IO[bytes],
     *,
     slice_info: SliceInfo | None = None,
     project_settings: dict[str, object] | None = None,
@@ -369,6 +378,7 @@ def pack_gcode_3mf(
     filament_maps = _filament_maps_str()
 
     # Build the ZIP archive
+    fh: IO[bytes]
     if isinstance(output, (str, Path)):
         fh = open(output, "wb")
         should_close = True
@@ -413,6 +423,7 @@ def pack_gcode_3mf(
             if not thumb_map:
                 try:
                     from bambu_3mf.thumbnail import gcode_thumbnail
+
                     gcode_str = gcode if isinstance(gcode, str) else gcode.decode(errors="replace")
                     main_png = gcode_thumbnail(gcode_str, 256, 256)
                     small_png = gcode_thumbnail(gcode_str, 128, 128)

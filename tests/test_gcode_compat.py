@@ -1,7 +1,5 @@
 """Tests for gcode_compat — generic slicer G-code → BBL firmware translation."""
 
-import pytest
-
 from bambu_3mf.gcode_compat import (
     _build_header_block,
     _parse_prusa_time,
@@ -217,12 +215,7 @@ def test_pack_no_double_translate(tmp_path):
 
     from bambu_3mf import pack_gcode_3mf
 
-    bbl_gcode = (
-        b"; HEADER_BLOCK_START\n"
-        b"; total layer number: 2\n"
-        b"; HEADER_BLOCK_END\n"
-        b"G28\nG1 Z0.2\n"
-    )
+    bbl_gcode = b"; HEADER_BLOCK_START\n; total layer number: 2\n; HEADER_BLOCK_END\nG28\nG1 Z0.2\n"
     out = tmp_path / "test.gcode.3mf"
     pack_gcode_3mf(bbl_gcode, out)
 
