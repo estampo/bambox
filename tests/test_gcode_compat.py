@@ -156,12 +156,72 @@ def test_prusa_original_markers_preserved():
     assert ";HEIGHT:0.2" in result
 
 
-# --- Unknown slicer ---
+# --- Z-change fallback (unknown slicer) ---
 
 
-def test_unknown_slicer_unchanged():
-    gcode = b"G28\nG1 X0 Y0 Z0.2\nG1 E5 F300\n"
+def test_zchange_plain_gcode_gets_layer_markers():
+    """Plain G-code with Z moves and no slicer comments should get layer markers."""
+    gcode = b"G28\nG1 X0 Y0 Z0.2 F3000\nG1 X10 Y10 E1\nG1 Z0.4\nG1 X20 Y20 E2\nG0 Z0.6\nG1 X30 E3\n"
+    result = translate_to_bbl(gcode).decode()
+    assert result.startswith("; HEADER_BLOCK_START\n")
+    assert "; total layer number: 3" in result
+    assert "; max_z_height: 0.60" in result
+    assert "M73 L1\n" in result
+    assert "M73 L2\n" in result
+    assert "M73 L3\n" in result
+    assert "M991 S0 P0 ;notify layer change" in result
+    assert "M991 S0 P2 ;notify layer change" in result
+    # Original movement commands preserved
+    assert "G1 X10 Y10 E1" in result
+
+
+def test_zchange_no_z_moves_unchanged():
+    """G-code with no Z moves should be returned unchanged."""
+    gcode = b"G28\nG1 X10 Y10 E1 F300\nG1 X20 Y20 E2\n"
     assert translate_to_bbl(gcode) == gcode
+
+
+def test_zchange_mixed_g0_g1():
+    """Both G0 and G1 Z changes should be detected."""
+    gcode = b"G1 Z0.2 F3000\nG0 Z0.4\nG1 Z0.6\n"
+    result = translate_to_bbl(gcode).decode()
+    assert "; total layer number: 3" in result
+    assert "M73 L1\n" in result
+    assert "M73 L2\n" in result
+    assert "M73 L3\n" in result
+
+
+def test_zchange_z_decrease_not_counted():
+    """Z decreases (e.g. retract or Z-hop return) should not count as new layers."""
+    gcode = b"G1 Z0.2 F3000\nG1 Z0.4\nG1 Z0.3\nG1 Z0.6\n"
+    result = translate_to_bbl(gcode).decode()
+    # Z0.3 < Z0.4 so not a new layer; only 0.2, 0.4, 0.6 count
+    assert "; total layer number: 3" in result
+
+
+def test_zchange_does_not_fire_for_cura():
+    """Fallback must not fire when CuraEngine markers are present."""
+    result = translate_to_bbl(CURA_GCODE).decode()
+    # Should use Cura path (has ;LAYER_COUNT:3), not zchange
+    assert ";LAYER_COUNT:3" in result
+    assert "; total layer number: 3" in result
+
+
+def test_zchange_does_not_fire_for_prusa():
+    """Fallback must not fire when PrusaSlicer markers are present."""
+    result = translate_to_bbl(PRUSA_GCODE).decode()
+    assert ";LAYER_CHANGE" in result
+    assert "; total layer number: 3" in result
+
+
+def test_zchange_progress_percentage():
+    """Progress percentage should increase with each layer."""
+    gcode = b"G1 Z0.2\nG1 Z0.4\nG1 Z0.6\nG1 Z0.8\n"
+    result = translate_to_bbl(gcode).decode()
+    assert "M73 P0 R0\n" in result  # layer 0
+    assert "M73 P25 R0\n" in result  # layer 1
+    assert "M73 P50 R0\n" in result  # layer 2
+    assert "M73 P75 R0\n" in result  # layer 3
 
 
 # --- Helpers ---
