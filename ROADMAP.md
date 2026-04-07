@@ -22,45 +22,55 @@ Core packaging library with Bambu Connect compatibility.
 
 ---
 
-## v0.2.0 — Planned
+## v0.2.0 — In Progress
 
 **Theme: Rust FFI bridge daemon replacing the C++ binary.**
 
-See `docs/bridge-migration-plan.md` for full design.
+### Done (prototype working)
+- [x] C++ shim wrapping `libbambu_networking.so` functions via dlopen
+- [x] `build.rs` compiling shim as C++17 and linking `libdl`
+- [x] `BambuAgent` struct managing agent lifecycle with Drop cleanup
+- [x] Thread-safe callback state (atomics + Mutex)
+- [x] `status` subcommand: connect, query, print JSON, exit
+- [x] `watch` subcommand: stdin-driven MQTT message streaming
+- [x] `daemon` subcommand: axum HTTP server
+- [x] Credential loading from `~/.config/estampo/credentials.toml` and JSON
+- [x] HTTP endpoints: `/ping`, `/health`, `/status/{device}`, `/ams/{device}`, `/print`, `/cancel/{device}`, `/shutdown`
+- [x] 3MF upload via multipart POST (eliminates bind-mount issues)
+- [x] Cached printer state with 30s TTL
+- [x] Full print pipeline: AMS mapping, color patching, config 3MF stripping
+- [x] Retry logic for `-3140` enc flag failures (15s backoff, 5 retries)
+- [x] Unit tests for credential parsing, callbacks, 3MF processing, HTTP handlers
 
-### Phase 1: Rust CLI (status + watch)
-- [ ] C++ shim wrapping ~15 `libbambu_networking.so` functions
-- [ ] `build.rs` compiling shim and linking `libdl`
-- [ ] `BambuAgent` struct managing agent lifecycle
-- [ ] `status` subcommand: connect, query, print JSON, exit
-- [ ] `watch` subcommand: stream MQTT messages to stdout
-- [ ] Credential loading from `~/.config/estampo/credentials.toml`
-
-### Phase 2: HTTP API
-- [ ] Axum HTTP server on `127.0.0.1:8765`
-- [ ] Endpoints: `/health`, `/status/{device}`, `/ams/{device}`, `/print`, `/cancel/{device}`, `/watch/{device}` (WebSocket)
-- [ ] 3MF upload via HTTP POST (eliminates bind-mount issues)
-- [ ] Persistent MQTT connection with cached printer state
+### Remaining for v0.2.0 release (#28 — high priority)
+- [ ] Replace `CString::new().unwrap()` with error propagation (~20 call sites)
+- [ ] Move agent to dedicated thread with command channel (unblock HTTP during MQTT queries)
+- [ ] Wire up print cancellation (`WasCancelledFn` → `AtomicBool`)
+- [ ] Replace `static mut SAVED_STDOUT` with `AtomicI32`
+- [ ] Dockerfile for building and running the Rust bridge
 
 ### Out of scope for v0.2.0
-- Migrating code from estampo (that's v0.3.0)
-- LAN printing rewrite in Rust
-- Moonraker support decision
+- WebSocket `/watch/{device}` endpoint (Phase 2b)
+- LAN printing mode
+- Migrating code from estampo
 
 ---
 
 ## v0.3.0 — Planned
 
-**Theme: Absorb printer code from estampo. Phase 1 of the split.**
+**Theme: Absorb printer code from estampo. Complete the split.**
 
-Per estampo ADR-005, bambox becomes the standalone Bambu packaging + communication library.
+Per estampo ADR-005, bambox becomes the standalone Bambu packaging + communication library. This release coordinates with estampo v0.4.0.
 
 - Migrate `cloud/bridge.py` from estampo (rewrite as HTTP client to Rust daemon)
 - Migrate `cloud/ams.py`, `auth.py`, `credentials.py`, `printer.py` from estampo
+- Migrate `thumbnails.py`, `bambu_connect_fixup()` from estampo
 - Migrate associated tests
+- Send print completion (100%) command to printer (#381 on estampo)
 - bambox publishes release with new modules
 - estampo drops printer code, adds optional `bambox` dependency
-- Docker image for Rust bridge daemon (`estampo/bambu-bridge:latest`)
+- WebSocket `/watch/{device}` endpoint
+- LAN printing mode
 
 ---
 
@@ -70,28 +80,25 @@ Per estampo ADR-005, bambox becomes the standalone Bambu packaging + communicati
 
 - Public API freeze for `pack_gcode_3mf()`, `build_project_settings()`, `fixup_project_settings()`
 - Comprehensive API documentation
-- Support for additional Bambu printer models beyond P1S
+- Support for additional Bambu printer models (X1C, A1, A1 Mini)
 
 ---
 
 ## Deferred / Backlog
 
 - Moonraker (non-Bambu) printer support
-- LAN printing rewrite in Rust
 - Multi-extruder CuraEngine output packaging
 - Profile editing or merging UI
-- Additional machine base profiles (X1C, A1, A1 Mini)
 
 ---
 
 ## Architecture North Star
 
-Three independent projects, each owning one concern:
+Two projects, each owning one concern:
 
 ```
-estampo          -> pipeline orchestrator, slicer-agnostic
-bambox        -> BBL packaging + G-code templates + printer communication
-bambu-cloud      -> (may merge into bambox as the Rust bridge)
+estampo          → pipeline orchestrator, slicer-agnostic
+bambox           → BBL packaging + G-code templates + printer communication (Python lib + Rust bridge daemon)
 ```
 
 Every feature decision should move toward this split, not away from it.
