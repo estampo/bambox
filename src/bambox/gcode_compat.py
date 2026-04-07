@@ -59,7 +59,8 @@ def translate_to_bbl(gcode: bytes) -> bytes:
         text = _translate_cura(text)
     elif ";LAYER_CHANGE" in text:
         text = _translate_prusa(text)
-    # else: unknown slicer — return as-is (best effort)
+    else:
+        text = _translate_zchange(text)
 
     return text.encode()
 
@@ -199,6 +200,52 @@ def _parse_prusa_time(time_str: str) -> int:
     for match in re.finditer(r"(\d+)\s*s", time_str):
         total += int(match.group(1))
     return total
+
+
+_Z_MOVE_RE = re.compile(r"^G[01]\s.*Z([\d.]+)", re.MULTILINE)
+
+
+def _translate_zchange(text: str) -> str:
+    """Fallback translator: detect layers from Z-increasing G0/G1 moves.
+
+    When no slicer-specific comments are recognised, we scan for G0/G1 moves
+    whose Z value is strictly greater than the previous one and treat each
+    such move as a layer boundary.  BBL firmware markers are injected so the
+    printer can display layer progress.
+
+    Time estimation is unavailable for unknown slicers so *time_secs* is 0.
+    """
+    # Collect Z values and their positions
+    z_positions: list[tuple[int, float]] = []
+    prev_z = -1.0
+    for m in _Z_MOVE_RE.finditer(text):
+        z = float(m.group(1))
+        if z > prev_z:
+            z_positions.append((m.start(), z))
+            prev_z = z
+
+    if not z_positions:
+        return text
+
+    total = len(z_positions)
+    max_z = f"{z_positions[-1][1]:.2f}"
+
+    header = _build_header_block(total, 0, max_z)
+    header += "M73 P0 R0\n"
+
+    # Inject layer markers in reverse order so earlier offsets stay valid
+    for layer_num, (pos, _z) in enumerate(reversed(z_positions)):
+        idx = total - 1 - layer_num  # original index
+        pct = round(idx * 100 / total) if total > 0 else 0
+        marker = (
+            f"; layer num/total_layer_count: {idx + 1}/{total}\n"
+            f"M73 P{pct} R0\n"
+            f"M73 L{idx + 1}\n"
+            f"M991 S0 P{idx} ;notify layer change\n"
+        )
+        text = text[:pos] + marker + text[pos:]
+
+    return header + text
 
 
 def _build_header_block(total_layers: int, time_secs: int, max_z: str) -> str:

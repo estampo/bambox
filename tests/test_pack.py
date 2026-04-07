@@ -100,7 +100,8 @@ class TestArchiveStructure:
 
 class TestGcodeIntegrity:
     def test_gcode_round_trips(self) -> None:
-        gcode = b"; test\nG28\nG1 X50 Y50 Z0.3\n"
+        # G-code without Z moves is not modified by the Z-change fallback
+        gcode = b"; test\nG28\nG1 X50 Y50 E1\n"
         z = _pack(gcode=gcode)
         assert z.read("Metadata/plate_1.gcode") == gcode
 
