@@ -202,12 +202,14 @@ class TestEndToEnd:
             assert "Metadata/model_settings.config" in names
             assert "Metadata/plate_1.png" in names
 
-            # Gcode round-trips
-            assert z.read("Metadata/plate_1.gcode") == gcode.encode()
+            # G-code is translated to BBL format (Z-change fallback adds header)
+            packed_gcode = z.read("Metadata/plate_1.gcode")
+            assert packed_gcode.startswith(b"; HEADER_BLOCK_START\n")
+            assert b"G1 Z0.2 F1200" in packed_gcode
 
-            # MD5 correct
+            # MD5 matches the packed (translated) G-code
             md5 = z.read("Metadata/plate_1.gcode.md5").decode()
-            assert md5 == hashlib.md5(gcode.encode()).hexdigest().upper()
+            assert md5 == hashlib.md5(packed_gcode).hexdigest().upper()
 
             # project_settings has padded arrays
             ps = json.loads(z.read("Metadata/project_settings.config"))
