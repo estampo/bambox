@@ -20,6 +20,8 @@ tower-http = { version = "0.6", features = ["cors", "trace"] }
 axum-extra = { version = "0.9", features = ["multipart"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+dirs = "6"
 
 [build-dependencies]
 cc = "1"
