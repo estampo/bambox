@@ -164,12 +164,28 @@ pub struct BambuAgent {
     agent: *mut c_void,
     // Box to ensure stable address for callback context pointer
     state: Box<CallbackState>,
+    /// Base directory for cert/config/log files.
+    data_dir: String,
 }
 
 // The agent pointer is thread-safe (the .so manages its own locking)
 unsafe impl Send for BambuAgent {}
 
 impl BambuAgent {
+    /// Determine the base directory for agent data (cert, config, log).
+    ///
+    /// Prefers the platform cache dir if it contains the cert file,
+    /// otherwise falls back to `/tmp/bambu_agent/` (Docker compatibility).
+    fn resolve_data_dir() -> String {
+        if let Some(cache) = crate::fetch::cache_dir() {
+            let cert = cache.join("cert").join("slicer_base64.cer");
+            if cert.is_file() {
+                return cache.to_string_lossy().into_owned();
+            }
+        }
+        "/tmp/bambu_agent".to_string()
+    }
+
     /// Load the .so library and create an agent.
     pub fn new(lib_path: &str) -> Result<Self, String> {
         let c_path = CString::new(lib_path).map_err(|e| e.to_string())?;
@@ -196,27 +212,33 @@ impl BambuAgent {
             std::env::set_var("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt");
         }
 
-        // Create directories the .so expects
-        let _ = std::fs::create_dir_all("/tmp/bambu_agent/log");
-        let _ = std::fs::create_dir_all("/tmp/bambu_agent/config");
-        let _ = std::fs::create_dir_all("/tmp/bambu_agent/cert");
+        let data_dir = Self::resolve_data_dir();
 
-        let log_dir = CString::new("/tmp/bambu_agent/log").unwrap();
+        // Create directories the .so expects
+        let _ = std::fs::create_dir_all(format!("{data_dir}/log"));
+        let _ = std::fs::create_dir_all(format!("{data_dir}/config"));
+        let _ = std::fs::create_dir_all(format!("{data_dir}/cert"));
+
+        let log_dir = CString::new(format!("{data_dir}/log")).unwrap();
         let agent = unsafe { ffi::bambu_shim_create_agent(log_dir.as_ptr()) };
         if agent.is_null() {
             return Err("create_agent returned null".into());
         }
 
         let state = Box::new(CallbackState::new());
-        let mut this = Self { agent, state };
+        let mut this = Self {
+            agent,
+            state,
+            data_dir,
+        };
         this.configure()?;
         Ok(this)
     }
 
     /// Set up directories, certs, headers, and register all callbacks.
     fn configure(&mut self) -> Result<(), String> {
-        let config_dir = CString::new("/tmp/bambu_agent/config").unwrap();
-        let cert_dir = CString::new("/tmp/bambu_agent/cert").unwrap();
+        let config_dir = CString::new(format!("{}/config", self.data_dir)).unwrap();
+        let cert_dir = CString::new(format!("{}/cert", self.data_dir)).unwrap();
         let cert_name = CString::new("slicer_base64.cer").unwrap();
         let country = CString::new("US").unwrap();
 
@@ -563,6 +585,7 @@ impl BambuAgent {
         Self {
             agent: std::ptr::null_mut(),
             state: Box::new(CallbackState::new()),
+            data_dir: "/tmp/bambu_agent".to_string(),
         }
     }
 

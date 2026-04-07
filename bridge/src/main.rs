@@ -5,6 +5,7 @@
 
 mod agent;
 mod callbacks;
+mod fetch;
 mod ffi;
 mod print_job;
 mod server;
@@ -29,9 +30,17 @@ struct Cli {
     #[arg(
         long,
         env = "BAMBU_LIB_PATH",
-        default_value = "/tmp/bambu_plugin/libbambu_networking.so"
+        default_value_t = fetch::default_lib_path(),
     )]
     lib_path: String,
+
+    /// Disable auto-download of the networking library
+    #[arg(long, global = true)]
+    no_fetch: bool,
+
+    /// Bambu plugin version for auto-download
+    #[arg(long, default_value = "02.05.00.00", global = true)]
+    plugin_version: String,
 
     /// Verbose debug output
     #[arg(short, long, global = true)]
@@ -263,6 +272,16 @@ async fn main() {
         .with_writer(io::stderr)
         .init();
 
+    // Resolve library path (auto-download if needed).
+    let lib_path =
+        match fetch::ensure_library(&cli.lib_path, cli.no_fetch, &cli.plugin_version).await {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("error: {e}");
+                process::exit(1);
+            }
+        };
+
     match &cli.command {
         Command::Status {
             device_id,
@@ -270,7 +289,7 @@ async fn main() {
         } => {
             suppress_stdout();
             let creds = load_credentials(credentials);
-            let agent = init_agent(&cli.lib_path, &creds);
+            let agent = init_agent(&lib_path, &creds);
             cmd_status(&agent, device_id);
             fast_exit(0);
         }
@@ -280,7 +299,7 @@ async fn main() {
         } => {
             suppress_stdout();
             let creds = load_credentials(credentials);
-            let agent = init_agent(&cli.lib_path, &creds);
+            let agent = init_agent(&lib_path, &creds);
             cmd_watch(&agent, device_id);
             fast_exit(0);
         }
@@ -291,7 +310,7 @@ async fn main() {
         } => {
             suppress_stdout();
             let creds = load_credentials(credentials);
-            let agent = init_agent(&cli.lib_path, &creds);
+            let agent = init_agent(&lib_path, &creds);
             restore_stdout();
 
             let state = server::AppState::new(agent);
