@@ -260,27 +260,27 @@ class TestEndToEnd:
 class TestParseFilamentArgs:
     def test_default_when_none(self) -> None:
         result = _parse_filament_args(None)
-        assert result == [("PLA", "#F2754E")]
+        assert result == [(None, "PLA", "#F2754E")]
 
     def test_single_type(self) -> None:
         result = _parse_filament_args(["PETG-CF"])
-        assert result == [("PETG-CF", "#F2754E")]
+        assert result == [(None, "PETG-CF", "#F2754E")]
 
     def test_type_with_color(self) -> None:
         result = _parse_filament_args(["PLA:#FF0000"])
-        assert result == [("PLA", "#FF0000")]
+        assert result == [(None, "PLA", "#FF0000")]
 
     def test_color_without_hash(self) -> None:
         result = _parse_filament_args(["ASA:BCBCBC"])
-        assert result == [("ASA", "#BCBCBC")]
+        assert result == [(None, "ASA", "#BCBCBC")]
 
     def test_multiple_filaments(self) -> None:
         result = _parse_filament_args(["PETG-CF:#2850E0", "PLA"])
-        assert result == [("PETG-CF", "#2850E0"), ("PLA", "#F2754E")]
+        assert result == [(None, "PETG-CF", "#2850E0"), (None, "PLA", "#F2754E")]
 
     def test_lowercase_normalized(self) -> None:
         result = _parse_filament_args(["pla"])
-        assert result == [("PLA", "#F2754E")]
+        assert result == [(None, "PLA", "#F2754E")]
 
 
 class TestCliPack:

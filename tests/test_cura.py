@@ -6,7 +6,7 @@ import json
 import zipfile
 from pathlib import Path
 
-from bambox.cli import main
+from bambox.cli import _assign_filament_slots, _parse_filament_args, main
 from bambox.cura import (
     available_cura_printers,
     build_template_context,
@@ -62,6 +62,14 @@ class TestCuraDefinitions:
             overrides = ext["overrides"]
             assert overrides["machine_nozzle_offset_x"]["default_value"] == 0
             assert overrides["machine_nozzle_offset_y"]["default_value"] == 0
+
+    def test_p1s_ams_has_roofing_flooring_counts(self) -> None:
+        """CuraEngine 5.12+ requires explicit roofing/flooring_layer_count."""
+        defn = cura_definitions_dir() / "bambox_p1s_ams.def.json"
+        data = json.loads(defn.read_text())
+        overrides = data["overrides"]
+        assert "roofing_layer_count" in overrides
+        assert "flooring_layer_count" in overrides
 
     def test_extruders_emit_filament_headers(self) -> None:
         """Each extruder emits BAMBOX_FILAMENT_SLOT and BAMBOX_FILAMENT_TYPE."""
@@ -259,3 +267,81 @@ class TestPackWithBamboxHeaders:
             ps = json.loads(z.read("Metadata/project_settings.config"))
             assert ps["filament_type"][0] == "PLA"
             assert ps["filament_type"][1] == "PETG-CF"
+
+    def test_slot_mapping_from_cli(self, tmp_path: Path) -> None:
+        """bambox pack -f 3:PETG-CF places filament in slot 3."""
+        gcode_file = tmp_path / "slot.gcode"
+        gcode_file.write_text("G28\nG1 Z0.2 F1200\nG1 X10 Y10 E1 F600\n")
+        output = tmp_path / "slot.gcode.3mf"
+
+        main(["pack", str(gcode_file), "-o", str(output), "-f", "3:PETG-CF"])
+
+        with zipfile.ZipFile(output) as z:
+            ps = json.loads(z.read("Metadata/project_settings.config"))
+            assert ps["filament_type"][0] == "PETG-CF"
+
+    def test_slot_mapping_from_headers(self, tmp_path: Path) -> None:
+        """BAMBOX_FILAMENT_SLOT headers auto-configure slot assignment."""
+        gcode_file = tmp_path / "slot_header.gcode"
+        gcode_file.write_text(
+            "; BAMBOX_PRINTER=p1s\n"
+            "; BAMBOX_FILAMENT_SLOT=0\n"
+            "; BAMBOX_FILAMENT_SLOT=2\n"
+            "; BAMBOX_FILAMENT_TYPE=PLA\n"
+            "; BAMBOX_FILAMENT_TYPE=PETG-CF\n"
+            "; BAMBOX_END\n"
+            "G28\nG1 Z0.2 F1200\nG1 X10 Y10 E1 F600\n"
+        )
+        output = tmp_path / "slot_header.gcode.3mf"
+
+        main(["pack", str(gcode_file), "-o", str(output)])
+
+        with zipfile.ZipFile(output) as z:
+            ps = json.loads(z.read("Metadata/project_settings.config"))
+            assert ps["filament_type"][0] == "PLA"
+            assert ps["filament_type"][1] == "PETG-CF"
+
+
+class TestParseFilamentArgs:
+    def test_type_only(self) -> None:
+        result = _parse_filament_args(["PLA"])
+        assert result == [(None, "PLA", "#F2754E")]
+
+    def test_type_color(self) -> None:
+        result = _parse_filament_args(["PLA:#FF0000"])
+        assert result == [(None, "PLA", "#FF0000")]
+
+    def test_slot_type(self) -> None:
+        result = _parse_filament_args(["3:PETG-CF"])
+        assert result == [(3, "PETG-CF", "#F2754E")]
+
+    def test_slot_type_color(self) -> None:
+        result = _parse_filament_args(["2:PETG-CF:#2850E0"])
+        assert result == [(2, "PETG-CF", "#2850E0")]
+
+    def test_default(self) -> None:
+        result = _parse_filament_args(None)
+        assert result == [(None, "PLA", "#F2754E")]
+
+
+class TestAssignFilamentSlots:
+    def test_sequential(self) -> None:
+        parsed = [(None, "PLA", "#F2754E"), (None, "PETG-CF", "#F2754E")]
+        result = _assign_filament_slots(parsed)
+        assert result == [(0, "PLA", "#F2754E"), (1, "PETG-CF", "#F2754E")]
+
+    def test_explicit_slot(self) -> None:
+        parsed = [(3, "PETG-CF", "#F2754E")]
+        result = _assign_filament_slots(parsed)
+        assert result == [(3, "PETG-CF", "#F2754E")]
+
+    def test_mixed_explicit_and_sequential(self) -> None:
+        parsed = [(None, "PLA", "#F2754E"), (2, "PETG-CF", "#2850E0")]
+        result = _assign_filament_slots(parsed)
+        assert result == [(0, "PLA", "#F2754E"), (2, "PETG-CF", "#2850E0")]
+
+    def test_explicit_slot_skips_for_sequential(self) -> None:
+        """Unslotted filaments skip over explicitly claimed slots."""
+        parsed = [(0, "PETG-CF", "#F2754E"), (None, "PLA", "#F2754E")]
+        result = _assign_filament_slots(parsed)
+        assert result == [(0, "PETG-CF", "#F2754E"), (1, "PLA", "#F2754E")]

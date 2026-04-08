@@ -69,6 +69,9 @@
         "prime_tower_size": { "default_value": 40 },
         "prime_tower_min_volume": { "default_value": 250 },
 
+        "roofing_layer_count": { "default_value": 0 },
+        "flooring_layer_count": { "default_value": 0 },
+
         "machine_buildplate_type":
         {
             "default_value": "textured_pei_plate",

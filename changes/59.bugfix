@@ -1,0 +1,1 @@
+Wire ``BAMBOX_FILAMENT_SLOT`` headers into ``bambox pack`` auto-configuration so CuraEngine extruder slot assignments are respected.
