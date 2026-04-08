@@ -20,12 +20,23 @@ use clap::{Parser, Subcommand};
 
 use agent::{BambuAgent, Credentials};
 
-/// Default credentials path: `~/.config/estampo/credentials.toml`
-fn default_credentials_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("estampo")
-        .join("credentials.toml")
+/// Candidate credentials paths, checked in order.
+/// On macOS dirs::config_dir() returns ~/Library/Application Support/
+/// but estampo uses ~/.config/ (XDG style), so we check both.
+fn credentials_search_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    // Always check XDG-style ~/.config first (cross-platform, estampo default)
+    if let Some(home) = dirs::home_dir() {
+        paths.push(home.join(".config").join("estampo").join("credentials.toml"));
+    }
+    // Also check platform config dir (~/Library/Application Support/ on macOS)
+    if let Some(config) = dirs::config_dir() {
+        let platform_path = config.join("estampo").join("credentials.toml");
+        if !paths.contains(&platform_path) {
+            paths.push(platform_path);
+        }
+    }
+    paths
 }
 
 #[derive(Parser)]
@@ -115,18 +126,23 @@ fn fast_exit(code: i32) -> ! {
     unsafe { libc::_exit(code) }
 }
 
-/// Resolve the credentials path: explicit flag > env var > default location.
+/// Resolve the credentials path: explicit flag > env var > search defaults.
 fn resolve_credentials_path(explicit: &Option<PathBuf>) -> PathBuf {
     if let Some(p) = explicit {
         return p.clone();
     }
-    let default = default_credentials_path();
-    if default.is_file() {
-        return default;
+    let candidates = credentials_search_paths();
+    for path in &candidates {
+        if path.is_file() {
+            return path.clone();
+        }
     }
+    let hint = candidates.first()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "~/.config/estampo/credentials.toml".to_string());
     eprintln!(
         "error: no credentials file found. Pass --credentials or create {}",
-        default_credentials_path().display()
+        hint
     );
     process::exit(1);
 }
