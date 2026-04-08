@@ -352,7 +352,6 @@ def fixup_model_settings(xml: str, min_slots: int = MIN_SLOTS) -> str:
         "thumbnail_no_light_file": "Metadata/plate_no_light_1.png",
         "top_file": "Metadata/top_1.png",
         "pick_file": "Metadata/pick_1.png",
-        "pattern_bbox_file": "Metadata/plate_1.json",
     }
     for key, val in extra_keys.items():
         if f'key="{key}"' not in result:
@@ -419,6 +418,32 @@ def repack_3mf(
         except KeyError:
             ms_patched = None
 
+        # --- Fix plate_1.json (bounding-box / plate metadata) ---
+        _PLATE_JSON_PATH = "Metadata/plate_1.json"
+        plate_json_override: str | None = None
+        try:
+            zin.read(_PLATE_JSON_PATH)
+        except KeyError:
+            # Generate a minimal plate_1.json so model_settings refs are valid
+            colors = filament_colors or ["#F2754E"]
+            plate_data: dict[str, object] = {
+                "filament_colors": colors,
+                "filament_ids": list(range(len(colors))),
+                "first_extruder": 0,
+                "is_seq_print": False,
+                "nozzle_diameter": 0.4,
+                "version": 2,
+            }
+            plate_json_override = json.dumps(plate_data, separators=(",", ":"))
+
+        # Add pattern_bbox_file ref to model_settings now that we know the file
+        # will exist (either already present or generated above)
+        if ms_patched and 'key="pattern_bbox_file"' not in ms_patched:
+            ms_patched = ms_patched.replace(
+                "  </plate>",
+                f'    <metadata key="pattern_bbox_file" value="{_PLATE_JSON_PATH}"/>\n  </plate>',
+            )
+
         # --- Fix thumbnails ---
         thumb_files = [
             "Metadata/plate_1.png",
@@ -477,6 +502,10 @@ def repack_3mf(
                     "Metadata/project_settings.config",
                     json.dumps(ps, indent=4) + "\n",
                 )
+
+            # Add plate_1.json if it didn't exist in the original
+            if plate_json_override is not None:
+                zout.writestr(_PLATE_JSON_PATH, plate_json_override)
 
     path.write_bytes(buf.getvalue())
 

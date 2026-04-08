@@ -416,7 +416,9 @@ class TestFixupModelSettings:
         assert 'key="thumbnail_file"' in result
         assert 'key="top_file"' in result
         assert 'key="pick_file"' in result
-        assert 'key="pattern_bbox_file"' in result
+        # pattern_bbox_file is NOT added by fixup_model_settings — it's handled
+        # by repack_3mf which ensures the actual file exists first
+        assert 'key="pattern_bbox_file"' not in result
 
     def test_preserves_existing_thumbnail_keys(self) -> None:
         xml = (
@@ -533,6 +535,51 @@ class TestRepack:
             ps = json.loads(z.read("Metadata/project_settings.config"))
             assert ps["filament_colour"][0] == "#2850E0"
             assert ps["filament_colour"][1] == "#FF0000"
+
+    def test_generates_plate_json_when_missing(self, tmp_path: Path) -> None:
+        """Repack creates plate_1.json if not in original archive."""
+        threemf = tmp_path / "test.gcode.3mf"
+        _make_orca_3mf(threemf)  # helper doesn't include plate_1.json
+
+        repack_3mf(threemf)
+
+        with zipfile.ZipFile(threemf) as z:
+            assert "Metadata/plate_1.json" in z.namelist()
+            plate = json.loads(z.read("Metadata/plate_1.json"))
+            assert "filament_colors" in plate
+            assert plate["version"] == 2
+
+    def test_adds_bbox_ref_with_plate_json(self, tmp_path: Path) -> None:
+        """model_settings gets pattern_bbox_file ref when plate_1.json exists."""
+        threemf = tmp_path / "test.gcode.3mf"
+        _make_orca_3mf(threemf)
+
+        repack_3mf(threemf)
+
+        with zipfile.ZipFile(threemf) as z:
+            ms = z.read("Metadata/model_settings.config").decode()
+            assert 'key="pattern_bbox_file"' in ms
+
+    def test_preserves_existing_plate_json(self, tmp_path: Path) -> None:
+        """Repack doesn't overwrite existing plate_1.json."""
+        threemf = tmp_path / "test.gcode.3mf"
+        custom_plate = '{"custom":true}'
+        with zipfile.ZipFile(threemf, "w") as z:
+            z.writestr("Metadata/plate_1.gcode", "G28\n")
+            z.writestr("Metadata/project_settings.config", '{"filament_type":["PLA"]}')
+            ms_xml = (
+                "<config>\n  <plate>\n"
+                '    <metadata key="filament_maps" value="1"/>\n'
+                "  </plate>\n</config>\n"
+            )
+            z.writestr("Metadata/model_settings.config", ms_xml)
+            z.writestr("Metadata/plate_1.json", custom_plate)
+            z.writestr("Metadata/plate_1.png", b"\x89PNG tiny")
+
+        repack_3mf(threemf)
+
+        with zipfile.ZipFile(threemf) as z:
+            assert json.loads(z.read("Metadata/plate_1.json")) == {"custom": True}
 
 
 class TestCliRepack:
