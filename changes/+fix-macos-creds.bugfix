@@ -1,0 +1,1 @@
+Fix credentials discovery on macOS to check ~/.config/ before ~/Library/Application Support/
