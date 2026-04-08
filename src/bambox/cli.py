@@ -8,6 +8,7 @@ import logging
 import sys
 from pathlib import Path
 
+from bambox.cura import build_template_context, parse_bambox_headers, strip_bambox_header
 from bambox.pack import FilamentInfo, SliceInfo, pack_gcode_3mf, repack_3mf
 from bambox.settings import available_filaments, available_machines, build_project_settings
 
@@ -37,9 +38,25 @@ def _cmd_pack(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     output = args.output or args.gcode.with_suffix(".gcode.3mf")
-    gcode = args.gcode.read_bytes()
+    gcode_bytes = args.gcode.read_bytes()
+    gcode_str = gcode_bytes.decode(errors="replace")
 
-    filaments = _parse_filament_args(args.filament)
+    # Check for BAMBOX headers in the G-code
+    headers = parse_bambox_headers(gcode_str)
+
+    # Determine machine and filaments: headers override CLI flags
+    if "PRINTER" in headers:
+        machine = headers["PRINTER"]
+    else:
+        machine = args.machine
+
+    if "FILAMENT_TYPE" in headers and not args.filament:
+        # Headers provide filament types (comma-separated for multi-filament)
+        header_types = headers["FILAMENT_TYPE"].split(",")
+        filaments = [(t.strip().upper(), "#F2754E") for t in header_types]
+    else:
+        filaments = _parse_filament_args(args.filament)
+
     filament_types = [f[0] for f in filaments]
     filament_colors = [f[1] for f in filaments]
 
@@ -62,14 +79,27 @@ def _cmd_pack(args: argparse.Namespace) -> None:
     try:
         project_settings = build_project_settings(
             filament_types,
-            machine=args.machine,
+            machine=machine,
             filament_colors=filament_colors,
         )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    pack_gcode_3mf(gcode, output, slice_info=info, project_settings=project_settings)
+    # If BAMBOX_ASSEMBLE=true, render start/end templates and wrap toolpath
+    if headers.get("ASSEMBLE") == "true":
+        from bambox.assemble import assemble_gcode
+        from bambox.templates import render_template
+
+        toolpath = strip_bambox_header(gcode_str)
+        ctx = build_template_context(headers, project_settings)
+        start = render_template(f"{machine}_start.gcode.j2", ctx)
+        end = render_template(f"{machine}_end.gcode.j2", ctx)
+        gcode_bytes = assemble_gcode(start, toolpath, end).encode()
+        if headers:
+            print(f"Auto-configured from BAMBOX headers: {machine}, {filament_types}")
+
+    pack_gcode_3mf(gcode_bytes, output, slice_info=info, project_settings=project_settings)
     print(f"Wrote {output} ({output.stat().st_size} bytes)")
 
 
