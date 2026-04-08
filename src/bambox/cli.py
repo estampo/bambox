@@ -15,19 +15,74 @@ from bambox.settings import available_filaments, available_machines, build_proje
 
 def _parse_filament_args(
     filament_args: list[str] | None,
-) -> list[tuple[str, str]]:
-    """Parse --filament TYPE or --filament TYPE:COLOR into (type, color) pairs."""
+) -> list[tuple[int | None, str, str]]:
+    """Parse --filament specs into (slot, type, color) triples.
+
+    Accepted formats::
+
+        TYPE            → (None, TYPE, default_color)
+        TYPE:COLOR      → (None, TYPE, COLOR)
+        SLOT:TYPE       → (SLOT, TYPE, default_color)   — SLOT is an int
+        SLOT:TYPE:COLOR → (SLOT, TYPE, COLOR)
+    """
+    default_color = "#F2754E"
     if not filament_args:
-        return [("PLA", "#F2754E")]
-    result = []
+        return [(None, "PLA", default_color)]
+    result: list[tuple[int | None, str, str]] = []
     for spec in filament_args:
-        if ":" in spec:
-            ftype, color = spec.split(":", 1)
-            if not color.startswith("#"):
-                color = "#" + color
-            result.append((ftype.upper(), color))
+        parts = spec.split(":")
+        if len(parts) == 1:
+            # TYPE
+            result.append((None, parts[0].upper(), default_color))
+        elif len(parts) == 2:
+            # Could be SLOT:TYPE or TYPE:COLOR
+            if parts[0].isdigit():
+                result.append((int(parts[0]), parts[1].upper(), default_color))
+            else:
+                color = parts[1] if parts[1].startswith("#") else "#" + parts[1]
+                result.append((None, parts[0].upper(), color))
+        elif len(parts) == 3:
+            # SLOT:TYPE:COLOR
+            slot = int(parts[0])
+            color = parts[2] if parts[2].startswith("#") else "#" + parts[2]
+            result.append((slot, parts[1].upper(), color))
         else:
-            result.append((spec.upper(), "#F2754E"))
+            result.append((None, spec.upper(), default_color))
+    return result
+
+
+def _assign_filament_slots(
+    parsed: list[tuple[int | None, str, str]],
+) -> list[tuple[int, str, str]]:
+    """Assign slot numbers to filaments, respecting explicit slot assignments.
+
+    Filaments with explicit slots are placed first, then unslotted filaments
+    fill remaining slots starting from 0.
+    """
+    # Collect explicit slots
+    explicit: dict[int, tuple[str, str]] = {}
+    unslotted: list[tuple[str, str]] = []
+    for slot, ftype, color in parsed:
+        if slot is not None:
+            explicit[slot] = (ftype, color)
+        else:
+            unslotted.append((ftype, color))
+
+    # Fill unslotted into the first available positions starting from 0
+    result: list[tuple[int, str, str]] = []
+    next_slot = 0
+    for ftype, color in unslotted:
+        while next_slot in explicit:
+            next_slot += 1
+        result.append((next_slot, ftype, color))
+        next_slot += 1
+
+    # Add explicit slots
+    for slot, (ftype, color) in explicit.items():
+        result.append((slot, ftype, color))
+
+    # Sort by slot number
+    result.sort(key=lambda x: x[0])
     return result
 
 
@@ -53,20 +108,25 @@ def _cmd_pack(args: argparse.Namespace) -> None:
     if "FILAMENT_TYPE" in headers and not args.filament:
         # Headers provide filament types (comma-separated for multi-filament)
         header_types = headers["FILAMENT_TYPE"].split(",")
-        filaments = [(t.strip().upper(), "#F2754E") for t in header_types]
+        header_slots = headers["FILAMENT_SLOT"].split(",") if "FILAMENT_SLOT" in headers else []
+        parsed_filaments: list[tuple[int | None, str, str]] = []
+        for i, t in enumerate(header_types):
+            slot = int(header_slots[i]) if i < len(header_slots) else None
+            parsed_filaments.append((slot, t.strip().upper(), "#F2754E"))
+        assigned = _assign_filament_slots(parsed_filaments)
     else:
-        filaments = _parse_filament_args(args.filament)
+        assigned = _assign_filament_slots(_parse_filament_args(args.filament))
 
-    filament_types = [f[0] for f in filaments]
-    filament_colors = [f[1] for f in filaments]
+    filament_types = [f[1] for f in assigned]
+    filament_colors = [f[2] for f in assigned]
 
     filament_infos = [
         FilamentInfo(
-            slot=i + 1,
+            slot=slot + 1,  # FilamentInfo uses 1-indexed slots
             filament_type=ftype,
             color=color,
         )
-        for i, (ftype, color) in enumerate(filaments)
+        for slot, ftype, color in assigned
     ]
 
     info = SliceInfo(
@@ -109,9 +169,13 @@ def _cmd_repack(args: argparse.Namespace) -> None:
         print(f"Error: {args.threemf} not found", file=sys.stderr)
         sys.exit(1)
 
-    filaments_parsed = _parse_filament_args(args.filament) if args.filament else None
-    filament_types = [f[0] for f in filaments_parsed] if filaments_parsed else None
-    filament_colors = [f[1] for f in filaments_parsed] if filaments_parsed else None
+    if args.filament:
+        assigned_repack = _assign_filament_slots(_parse_filament_args(args.filament))
+        filament_types = [f[1] for f in assigned_repack]
+        filament_colors = [f[2] for f in assigned_repack]
+    else:
+        filament_types = None
+        filament_colors = None
     machine = args.machine if filament_types else None
 
     try:
@@ -267,8 +331,9 @@ def main(argv: list[str] | None = None) -> None:
         "-f",
         "--filament",
         action="append",
-        metavar="TYPE[:COLOR]",
-        help=f"Filament type, optionally with color (e.g. 'PETG-CF' or 'PLA:#FF0000'). "
+        metavar="[SLOT:]TYPE[:COLOR]",
+        help=f"Filament type, optionally with AMS slot and color (e.g. 'PLA', '3:PETG-CF', "
+        f"'PLA:#FF0000', '2:PETG-CF:#2850E0'). "
         f"Repeatable for multi-filament. Available: {', '.join(available_filaments())}",
     )
     pack_p.add_argument("--printer-model-id", default="")
