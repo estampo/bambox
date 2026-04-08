@@ -2,6 +2,7 @@
 
 from bambox.gcode_compat import (
     _build_header_block,
+    _compute_flush_lengths,
     _parse_prusa_time,
     is_bbl_gcode,
     rewrite_tool_changes,
@@ -304,6 +305,25 @@ BASIC_SETTINGS: dict[str, object] = {
     "default_acceleration": "10000",
     "initial_layer_acceleration": "500",
     "initial_layer_print_height": "0.2",
+    "flush_volumes_matrix": [
+        "0",
+        "280",
+        "280",
+        "280",
+        "280",
+        "0",
+        "280",
+        "280",
+        "280",
+        "280",
+        "0",
+        "280",
+        "280",
+        "280",
+        "280",
+        "0",
+    ],
+    "flush_multiplier": "0.3",
 }
 
 
@@ -358,3 +378,33 @@ def test_rewrite_uses_temperatures_from_settings():
     # The toolchange template uses nozzle_temperature_range_high for flush temp
     # For first change (→extruder 1), should see 280 (PETG-CF range high)
     assert "280" in result
+
+
+def test_compute_flush_lengths_from_matrix():
+    """Flush lengths should be computed from flush_volumes_matrix * multiplier."""
+    fl1, fl2, fl3, fl4 = _compute_flush_lengths(BASIC_SETTINGS, 0, 1)
+    total = fl1 + fl2 + fl3 + fl4
+    # 280 * 0.3 = 84 mm³ / ~2.405 mm² ≈ 34.9 mm total
+    assert 34.0 < total < 36.0
+    # Same-filament transition should have zero flush
+    fl1z, fl2z, fl3z, fl4z = _compute_flush_lengths(BASIC_SETTINGS, 0, 0)
+    assert fl1z + fl2z + fl3z + fl4z == 0.0
+
+
+def test_compute_flush_lengths_defaults_without_matrix():
+    """Without a matrix, should fall back to default 280 mm³."""
+    settings: dict[str, object] = {}
+    fl1, fl2, fl3, fl4 = _compute_flush_lengths(settings, 0, 1)
+    total = fl1 + fl2 + fl3 + fl4
+    # 280 * 0.3 = 84 mm³ / ~2.405 mm² ≈ 34.9 mm
+    assert 34.0 < total < 36.0
+
+
+def test_rewrite_detects_initial_extruder():
+    """If G-code starts with T1 before the first tool change, previous_ext should be 1."""
+    gcode = "G28\nT1\nG1 Z0.2 F3000\nG1 X10 Y10 E1 F600\nT0\nG1 X20 Y20 E2 F600\n"
+    result = rewrite_tool_changes(gcode, BASIC_SETTINGS)
+    # Only one tool change (T0), so only one M620/M621 pair
+    m620_matches = list(__import__("re").finditer(r"M620 S(\d+)A", result))
+    assert len(m620_matches) == 1
+    assert m620_matches[0].group(1) == "0"  # switching TO 0 (from 1)

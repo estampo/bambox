@@ -18,7 +18,12 @@ translations.  OrcaSlicer / BambuStudio G-code is returned unchanged.
 
 from __future__ import annotations
 
+import math
 import re
+from bisect import bisect_right
+
+_FILAMENT_DIAMETER = 1.75  # mm — standard; change to 2.85 for bowden setups
+_DEFAULT_FLUSH_VOLUME = 280.0  # mm³ — BambuStudio default per-transition volume
 
 
 def is_bbl_gcode(gcode: str | bytes) -> bool:
@@ -305,37 +310,52 @@ def rewrite_tool_changes(
     def _int(key: str, idx: int, default: int = 0) -> int:
         return int(_num(key, idx, float(default)))
 
-    # Track current Z from G-code for max_layer_z / layer_z
+    # Track Z positions sorted by file offset for bisect lookup
+    z_positions: list[int] = []
+    z_values: list[float] = []
     max_z = 0.0
-    z_at: dict[int, float] = {}  # position → last Z before that point
-    current_z = 0.0
     for m in re.finditer(r"G[01]\s.*Z([\d.]+)", toolpath):
-        current_z = float(m.group(1))
-        if current_z > max_z:
-            max_z = current_z
-        z_at[m.start()] = current_z
+        z = float(m.group(1))
+        z_positions.append(m.start())
+        z_values.append(z)
+        if z > max_z:
+            max_z = z
 
-    # Determine initial extruder (before first T command)
+    # Detect initial extruder: if the first T command appears before any
+    # extrusion move (G1 ... E), it's an extruder select, not a tool change.
+    first_extrusion = re.search(r"G1\s.*E[\d.]", toolpath)
+    first_extrusion_pos = first_extrusion.start() if first_extrusion else len(toolpath)
+    skip_first = False
     current_extruder = 0
+    if matches:
+        first_t = matches[0]
+        first_t_ext = int(first_t.group(1))
+        if first_t_ext < 255 and first_t.start() < first_extrusion_pos:
+            current_extruder = first_t_ext
+            skip_first = True
     toolchange_count = 0
 
     # Build replacements in reverse order to preserve positions
     replacements: list[tuple[int, int, str]] = []
 
-    for match in matches:
+    for i, match in enumerate(matches):
         next_ext = int(match.group(1))
         # Skip special T commands
         if next_ext >= 255:
+            continue
+        # Skip initial extruder select (not a real tool change)
+        if skip_first and i == 0:
             continue
 
         previous_ext = current_extruder
         toolchange_count += 1
 
-        # Find the Z height at this point in the file
-        layer_z = 0.0
-        for pos, z in z_at.items():
-            if pos < match.start():
-                layer_z = z
+        # Find the Z height at this point using bisect
+        idx = bisect_right(z_positions, match.start()) - 1
+        layer_z = z_values[idx] if idx >= 0 else 0.0
+
+        # Compute flush lengths from flush_volumes_matrix
+        fl1, fl2, fl3, fl4 = _compute_flush_lengths(project_settings, previous_ext, next_ext)
 
         ctx: dict[str, object] = {
             "next_extruder": next_ext,
@@ -353,11 +373,11 @@ def rewrite_tool_changes(
             # Retraction
             "old_retract_length_toolchange": _num("retract_length_toolchange", previous_ext, 2.0),
             "new_retract_length_toolchange": _num("retract_length_toolchange", next_ext, 2.0),
-            # Flush lengths — use nozzle_volume_default_values or defaults
-            "flush_length_1": 24.0,
-            "flush_length_2": 24.0,
-            "flush_length_3": 12.0,
-            "flush_length_4": 8.0,
+            # Flush lengths from flush_volumes_matrix
+            "flush_length_1": fl1,
+            "flush_length_2": fl2,
+            "flush_length_3": fl3,
+            "flush_length_4": fl4,
             # Arrays that the template indexes
             "z_hop_types": _coerce_array(project_settings.get("z_hop_types", [0, 0, 0, 0, 0])),
             "long_retractions_when_cut": _coerce_array(
@@ -399,6 +419,51 @@ def rewrite_tool_changes(
         result = result[:start] + replacement + result[end:]
 
     return result
+
+
+def _compute_flush_lengths(
+    project_settings: dict[str, object],
+    from_ext: int,
+    to_ext: int,
+) -> tuple[float, float, float, float]:
+    """Compute per-stage flush lengths from ``flush_volumes_matrix``.
+
+    The matrix is a flattened N×N array where ``matrix[from * N + to]`` gives
+    the flush volume (mm³) for a filament transition.  The result is scaled by
+    ``flush_multiplier``, converted to filament extrusion length (mm), and
+    split across four pulsatile flush stages.
+    """
+    matrix_raw = project_settings.get("flush_volumes_matrix")
+    if isinstance(matrix_raw, list) and matrix_raw:
+        n = int(math.isqrt(len(matrix_raw)))
+        if n * n == len(matrix_raw) and from_ext < n and to_ext < n:
+            try:
+                volume = float(matrix_raw[from_ext * n + to_ext])
+            except (ValueError, TypeError):
+                volume = _DEFAULT_FLUSH_VOLUME
+        else:
+            volume = _DEFAULT_FLUSH_VOLUME
+    else:
+        volume = _DEFAULT_FLUSH_VOLUME
+
+    multiplier_raw = project_settings.get("flush_multiplier", "0.3")
+    try:
+        multiplier = float(multiplier_raw)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        multiplier = 0.3
+
+    total_volume = volume * multiplier  # mm³
+
+    # Convert volume to filament extrusion length: length = volume / (π × r²)
+    filament_area = math.pi * (_FILAMENT_DIAMETER / 2.0) ** 2  # ≈ 2.405 mm²
+    total_length = total_volume / filament_area
+
+    # Split across four flush stages (OrcaSlicer-compatible ratios)
+    fl1 = total_length * 0.35
+    fl2 = total_length * 0.35
+    fl3 = total_length * 0.18
+    fl4 = total_length * 0.12
+    return fl1, fl2, fl3, fl4
 
 
 def _coerce_array(val: object) -> list[object]:
