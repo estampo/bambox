@@ -118,9 +118,10 @@ def _run_bridge_local(
     verbose: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run the bridge via a local binary."""
-    cmd = [binary, *args]
+    cmd = [binary]
     if verbose:
         cmd.append("-v")
+    cmd.extend(args)
     log.debug("Running (local): %s", " ".join(cmd))
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 

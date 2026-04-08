@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import subprocess
 from unittest.mock import patch
 
-from bambox.bridge import _find_local_bridge
+from bambox.bridge import _find_local_bridge, _run_bridge_local
 
 
 class TestFindLocalBridge:
@@ -15,9 +16,6 @@ class TestFindLocalBridge:
 
     def test_finds_binary_in_local_bin(self, tmp_path):
         """Falls back to ~/.local/bin when not on PATH."""
-        binary = tmp_path / "bambox-bridge"
-        binary.touch()
-        binary.chmod(0o755)
         with (
             patch("bambox.bridge.shutil.which", return_value=None),
             patch("bambox.bridge.Path.home", return_value=tmp_path),
@@ -39,6 +37,24 @@ class TestFindLocalBridge:
             patch("bambox.bridge.Path.home", return_value=empty),
         ):
             assert _find_local_bridge() is None
+
+
+class TestRunBridgeLocal:
+    def test_builds_command_without_verbose(self):
+        """Args are passed through, no -v flag."""
+        with patch("bambox.bridge.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+            _run_bridge_local("/usr/local/bin/bambox-bridge", ["status", "DEV1"])
+            cmd = mock_run.call_args[0][0]
+            assert cmd == ["/usr/local/bin/bambox-bridge", "status", "DEV1"]
+
+    def test_verbose_flag_before_args(self):
+        """-v must appear before positional args."""
+        with patch("bambox.bridge.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess([], 0, "", "")
+            _run_bridge_local("/bin/bambox-bridge", ["print", "DEV1", "/f.3mf"], verbose=True)
+            cmd = mock_run.call_args[0][0]
+            assert cmd == ["/bin/bambox-bridge", "-v", "print", "DEV1", "/f.3mf"]
 
 
 class TestRunBridgeFallback:
