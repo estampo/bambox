@@ -29,7 +29,7 @@ fn default_credentials_path() -> PathBuf {
 }
 
 #[derive(Parser)]
-#[command(name = "bambu-bridge", about = "Bambu Lab printer bridge")]
+#[command(name = "bambox-bridge", about = "Bambu Lab printer bridge")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
