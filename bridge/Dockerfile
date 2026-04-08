@@ -85,11 +85,11 @@ RUN mkdir -p /tmp/bambu_agent/cert /tmp/bambu_agent/log /tmp/bambu_agent/config 
     && curl -fSL -o /tmp/bambu_agent/cert/slicer_base64.cer \
        "https://raw.githubusercontent.com/bambulab/BambuStudio/master/resources/cert/slicer_base64.cer"
 
-COPY --from=builder /build/target/release/bambu-bridge /usr/local/bin/bambu-bridge
+COPY --from=builder /build/target/release/bambox-bridge /usr/local/bin/bambox-bridge
 
 ENV BAMBU_LIB_PATH=/tmp/bambu_plugin/libbambu_networking.so
 
 EXPOSE 8765
 
-ENTRYPOINT ["bambu-bridge"]
+ENTRYPOINT ["bambox-bridge"]
 CMD ["daemon", "--bind", "0.0.0.0", "--port", "8765", "--credentials", "/config/credentials.toml"]

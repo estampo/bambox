@@ -3,6 +3,13 @@ name: Build bridge binaries
 on:
   push:
     tags: ['v*']
+    paths:
+      - 'bridge/**'
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'bridge/**'
   workflow_dispatch:
 
 jobs:
@@ -12,13 +19,13 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact: bambu-bridge-linux-x86_64
+            artifact: bambox-bridge-linux-x86_64
           - target: x86_64-apple-darwin
             os: macos-15
-            artifact: bambu-bridge-macos-x86_64
+            artifact: bambox-bridge-macos-x86_64
           - target: aarch64-apple-darwin
             os: macos-14
-            artifact: bambu-bridge-macos-arm64
+            artifact: bambox-bridge-macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -34,12 +41,12 @@ jobs:
       - name: Package binary
         run: |
           mkdir -p dist
-          cp bridge/target/${{ matrix.target }}/release/bambu-bridge dist/${{ matrix.artifact }}
-          chmod +x dist/${{ matrix.artifact }}
+          cp bridge/target/${{ matrix.target }}/release/bambox-bridge dist/bambox-bridge
+          chmod +x dist/bambox-bridge
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          path: dist/bambox-bridge
 
   release-assets:
     needs: build-bridge
@@ -51,12 +58,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
-          merge-multiple: true
       - name: Upload to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG=${GITHUB_REF#refs/tags/}
-          for f in dist/*; do
-            gh release upload "$TAG" "$f" --repo "${{ github.repository }}" --clobber
+          for dir in dist/bambox-bridge-*; do
+            name=$(basename "$dir")
+            mv "$dir/bambox-bridge" "dist/$name"
+            rmdir "$dir"
+            gh release upload "$TAG" "dist/$name" --repo "${{ github.repository }}" --clobber
           done

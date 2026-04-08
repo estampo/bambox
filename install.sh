@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install bambu-bridge — standalone Bambu Lab printer bridge
+# Install bambox-bridge — standalone Bambu Lab printer bridge
 set -e
 
 REPO="estampo/bambox"
@@ -21,7 +21,7 @@ case "$ARCH" in
   *)             echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-BINARY="bambu-bridge-${PLATFORM}-${ARCH_TAG}"
+ARTIFACT="bambox-bridge-${PLATFORM}-${ARCH_TAG}"
 
 # Get latest release tag
 TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
@@ -30,20 +30,25 @@ if [ -z "$TAG" ]; then
   exit 1
 fi
 
-URL="https://github.com/${REPO}/releases/download/${TAG}/${BINARY}"
+URL="https://github.com/${REPO}/releases/download/${TAG}/${ARTIFACT}"
 
-echo "Downloading bambu-bridge ${TAG} for ${PLATFORM}/${ARCH_TAG}..."
+echo "Downloading bambox-bridge ${TAG} for ${PLATFORM}/${ARCH_TAG}..."
 mkdir -p "$INSTALL_DIR"
-curl -fsSL -o "${INSTALL_DIR}/bambu-bridge" "$URL"
-chmod +x "${INSTALL_DIR}/bambu-bridge"
+curl -fsSL -o "${INSTALL_DIR}/bambox-bridge" "$URL"
+chmod +x "${INSTALL_DIR}/bambox-bridge"
+
+# macOS: remove quarantine attribute to avoid Gatekeeper prompts
+if [ "$OS" = "Darwin" ]; then
+  xattr -d com.apple.quarantine "${INSTALL_DIR}/bambox-bridge" 2>/dev/null || true
+fi
 
 echo ""
-echo "Installed bambu-bridge to ${INSTALL_DIR}/bambu-bridge"
+echo "Installed bambox-bridge to ${INSTALL_DIR}/bambox-bridge"
 echo ""
 if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
   echo "Add ${INSTALL_DIR} to your PATH:"
   echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
   echo ""
 fi
-echo "Run 'bambu-bridge --help' to get started."
+echo "Run 'bambox-bridge --help' to get started."
 echo "The Bambu networking library will be downloaded automatically on first use."

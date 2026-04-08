@@ -198,7 +198,7 @@ fn find_plugin_url(json: &serde_json::Value) -> Result<String, String> {
 /// Download a URL and return the bytes.
 async fn download_file(url: &str) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
-        .user_agent("bambu-bridge/0.1")
+        .user_agent("bambox-bridge/0.1")
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 

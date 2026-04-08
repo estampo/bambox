@@ -144,7 +144,7 @@ def start_daemon(credentials_path=None):
     """Start the bridge daemon container."""
     subprocess.run([
         "docker", "run", "-d",
-        "--name", "bambu-bridge",
+        "--name", "bambox-bridge",
         "--restart", "unless-stopped",
         "-p", "8765:8765",
         "-v", f"{credentials_path}:/config/credentials.json:ro",
@@ -152,8 +152,8 @@ def start_daemon(credentials_path=None):
     ])
 
 def stop_daemon():
-    subprocess.run(["docker", "stop", "bambu-bridge"])
-    subprocess.run(["docker", "rm", "bambu-bridge"])
+    subprocess.run(["docker", "stop", "bambox-bridge"])
+    subprocess.run(["docker", "rm", "bambox-bridge"])
 
 def ensure_daemon(credentials_path=None):
     """Start daemon if not running."""
