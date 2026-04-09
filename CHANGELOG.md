@@ -5,6 +5,19 @@ This changelog is managed by [towncrier](https://towncrier.readthedocs.io/).
 
 <!-- towncrier release notes start -->
 
+## 0.2.2 — 2026-04-09
+
+### Features
+
+- Add ``bambox validate`` command to check .gcode.3mf archives for safety and firmware compatibility (11 error rules, 9 warning rules) with human-readable and JSON output
+
+### Bugfixes
+
+- Add extract_slice_stats test coverage and clarify ;TIME: vs TIME_ELAPSED preference.
+- Add extruders_share_nozzle and extruders_share_heater to CuraEngine P1S definition so tool changes generate proper purge volumes for single-nozzle AMS.
+- Fix AMS slot matching: populate tray_info_idx from filament profiles instead of defaulting all slots to generic PLA (GFL99).
+
+
 ## 0.2.1 — 2026-04-09
 
 ### Features
