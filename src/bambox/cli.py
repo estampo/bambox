@@ -228,6 +228,48 @@ def _cmd_repack(args: argparse.Namespace) -> None:
     print(f"Repacked {args.threemf} ({args.threemf.stat().st_size} bytes)")
 
 
+def _cmd_validate(args: argparse.Namespace) -> None:
+    """Validate a .gcode.3mf archive."""
+    from bambox.validate import Severity, validate_3mf
+
+    if not args.threemf.exists():
+        print(f"Error: {args.threemf} not found", file=sys.stderr)
+        sys.exit(1)
+
+    result = validate_3mf(args.threemf)
+
+    if args.json_output:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        name = args.threemf.name
+        for f in result.findings:
+            if f.severity == Severity.ERROR:
+                prefix = f"  ERROR {f.code}"
+            else:
+                prefix = f"  WARN  {f.code}"
+            line = f"{prefix}: {f.message}"
+            if f.detail:
+                line += f" [{f.detail}]"
+            print(line)
+
+        n_err = len(result.errors)
+        n_warn = len(result.warnings)
+        if n_err == 0 and n_warn == 0:
+            print(f"{name}: valid")
+        elif n_err == 0:
+            print(f"{name}: valid ({n_warn} warning{'s' if n_warn != 1 else ''})")
+        else:
+            print(
+                f"{name}: INVALID ({n_err} error{'s' if n_err != 1 else ''}, "
+                f"{n_warn} warning{'s' if n_warn != 1 else ''})"
+            )
+
+    if not result.valid:
+        sys.exit(1)
+    if args.strict and result.warnings:
+        sys.exit(1)
+
+
 def _cmd_print(args: argparse.Namespace) -> None:
     """Send a .gcode.3mf to a Bambu printer via cloud bridge."""
     from bambox.bridge import cloud_print, load_credentials
@@ -537,6 +579,18 @@ def main(argv: list[str] | None = None) -> None:
         help="Manually specify AMS tray (e.g. '2:PETG-CF:2850E0'). Repeatable.",
     )
 
+    # --- validate subcommand ---
+    validate_p = sub.add_parser("validate", help="Validate a .gcode.3mf archive")
+    validate_p.add_argument("threemf", type=Path, help="Input .gcode.3mf file")
+    validate_p.add_argument(
+        "--json", dest="json_output", action="store_true", help="Output results as JSON"
+    )
+    validate_p.add_argument(
+        "--strict",
+        action="store_true",
+        help="Treat warnings as errors (non-zero exit)",
+    )
+
     # --- status subcommand ---
     status_p = sub.add_parser("status", help="Query printer status")
     status_p.add_argument("device", nargs="?", default="", help="Printer serial number")
@@ -559,6 +613,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_pack(args)
     elif args.command == "repack":
         _cmd_repack(args)
+    elif args.command == "validate":
+        _cmd_validate(args)
     elif args.command == "login":
         _cmd_login(args)
     elif args.command == "print":

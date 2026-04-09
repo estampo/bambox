@@ -10,6 +10,7 @@ from bambox.pack import (
     fixup_project_settings,
     pack_gcode_3mf,
 )
+from bambox.validate import ValidationResult, validate_3mf
 
 __all__ = [
     "assemble_gcode",
@@ -17,8 +18,10 @@ __all__ = [
     "is_bbl_gcode",
     "pack_gcode_3mf",
     "translate_to_bbl",
+    "validate_3mf",
     "FilamentInfo",
     "ObjectInfo",
     "SliceInfo",
+    "ValidationResult",
     "WarningInfo",
 ]
