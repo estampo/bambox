@@ -1,1 +1,0 @@
-BAMBOX header values (BED_TEMP, NOZZLE_TEMP, FILAMENT_TYPE) now correctly override project settings and CLI flags.

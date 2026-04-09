@@ -5,6 +5,67 @@ This changelog is managed by [towncrier](https://towncrier.readthedocs.io/).
 
 <!-- towncrier release notes start -->
 
+## 0.2.0 — 2026-04-09
+
+### Features
+
+- Add CI workflow to build and publish bridge Docker image ([#17](https://github.com/estampo/bambox/pull/17))
+- Add multi-stage Dockerfile for the Rust bridge daemon. ([#23](https://github.com/estampo/bambox/pull/23))
+- Add Z-change layer detection fallback for unknown slicers, enabling layer progress on Bambu printers with any G-code source. ([#30](https://github.com/estampo/bambox/pull/30))
+- Bridge runner tries local ``bambox-bridge`` binary before falling back to Docker. ([#37](https://github.com/estampo/bambox/pull/37))
+- Default credentials to ~/.config/estampo/credentials.toml, add --credentials flag ([#41](https://github.com/estampo/bambox/pull/41))
+- Auto-detect printers when no device ID given, add /printers daemon endpoint ([#42](https://github.com/estampo/bambox/pull/42))
+- Rewrite CuraEngine ``T0``/``T1`` tool change commands to Bambu M620/M621 sequences for multi-filament prints. ([#52](https://github.com/estampo/bambox/pull/52))
+- Support explicit AMS slot assignment in ``bambox pack -f`` flag (e.g. ``-f 3:PETG-CF``). Unslotted filaments fill remaining slots sequentially. ([#58](https://github.com/estampo/bambox/pull/58))
+- Add ``bambox login`` command for Bambu Cloud authentication and printer configuration, with credential storage at ``~/.config/bambox/credentials.toml`` (estampo fallback supported). ([#89](https://github.com/estampo/bambox/pull/89))
+- Add API documentation site via pdoc, deployed to GitHub Pages.
+- Add CuraEngine P1S AMS printer definition with BAMBOX header contract
+- Add `bambox repack` command to fix up existing OrcaSlicer .gcode.3mf archives for Bambu Connect
+- Bridge: replace agent mutex with command channel to unblock HTTP handlers during long operations.
+- Wire BAMBOX header parsing into `bambox pack` for auto-configuration from CuraEngine output
+- Wire settings.py into pack CLI: auto-generate 544-key project_settings from machine and filament profiles
+
+### Bugfixes
+
+- Fix platform detection in auto-fetch: send correct X-BBL-OS-Type header to Bambu API ([#43](https://github.com/estampo/bambox/pull/43))
+- Add M73 P100 R0 to end G-code so the printer transitions to 100% complete instead of staying stuck at 99%. ([#56](https://github.com/estampo/bambox/pull/56))
+- Add missing ``roofing_layer_count`` and ``flooring_layer_count`` overrides to ``bambox_p1s_ams`` CuraEngine definition, fixing CuraEngine 5.12+ slicing errors. ([#57](https://github.com/estampo/bambox/pull/57))
+- Wire ``BAMBOX_FILAMENT_SLOT`` headers into ``bambox pack`` auto-configuration so CuraEngine extruder slot assignments are respected. ([#59](https://github.com/estampo/bambox/pull/59))
+- Log a warning when ``parse_bambox_headers`` hits the 200-line limit without a ``; BAMBOX_END`` terminator instead of silently truncating. ([#69](https://github.com/estampo/bambox/pull/69))
+- Log a warning when ``flush_volumes_matrix`` is missing, malformed, or contains non-numeric values instead of silently falling back to the 280 mm³ default. ([#70](https://github.com/estampo/bambox/pull/70))
+- AMS mapping and color patching now handle XML namespaces in slice_info.config.
+- AMS mapping raises an error when filaments have no matching tray instead of silently using external spool.
+- BAMBOX header values (BED_TEMP, NOZZLE_TEMP, FILAMENT_TYPE) now correctly override project settings and CLI flags.
+- Bridge: replace CString panics with proper error propagation for user-supplied strings.
+- Escape user-controlled strings in slice_info.config XML to prevent corrupt archives.
+- Fix Hatchling config so built wheels include the bambox package.
+- Fix credentials discovery on macOS to check ~/.config/ before ~/Library/Application Support/
+- Fix macOS CI: use macos-15 runner, link libc++ instead of libstdc++
+- Reject duplicate explicit filament slot assignments with a clear error instead of silently overwriting the earlier assignment.
+- Use ``XDG_CACHE_HOME`` with ``tempfile.gettempdir()`` fallback for cloud token files instead of hardcoded ``~/.cache/bambox``, fixing ``PermissionError`` in sandboxed environments.
+- ``strip_bambox_header`` now only removes the leading header block instead of stripping ``; BAMBOX_*`` comments from the entire file.
+- fixup_project_settings() no longer mutates caller-owned dicts or shared defaults.
+
+### Misc
+
+- Add CI, coverage, PyPI, and Python version badges to README ([#15](https://github.com/estampo/bambox/pull/15))
+- Add 10 dedicated tests for assemble.py (component ordering, empty inputs).
+- Add 12 tests for bridge.py Docker invocation paths (bind-mount, baked fallback, error handling).
+- Add 20 dedicated tests for thumbnail.py (PNG rendering, bounding box, edge cases).
+- Add CI workflow for cross-compiling bridge binaries (Linux, macOS) and install script
+- Add Rust bridge test coverage for HTTP endpoints, handle, and callbacks.
+- Add ``pythonpath = ["src"]`` to pytest config so tests work without editable install.
+- Add tests for toolpath module.
+- Align ruff config with estampo (target-version, lint rules, import sorting)
+- Bridge: fix static-mut UB, cstr_to_str lifetime, document single-agent constraint.
+- Fetch libbambu_networking.so at build time, matching estampo cloud-bridge pattern
+- Improve CLI test coverage.
+- Improve test coverage for settings, templates, gcode_compat, and pack modules.
+- Remove dead cura.py module and Docker build — slicing lives in estampo.
+- Rename bridge binary to bambox-bridge, add xattr fix for macOS, trigger CI on bridge changes
+- Stop running TestPyPI publish on PRs (OIDC ref mismatch)
+
+
 ## 0.1.0 — 2026-03-15
 
 Initial release of bambox as a standalone library.

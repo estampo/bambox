@@ -1,1 +1,0 @@
-AMS mapping raises an error when filaments have no matching tray instead of silently using external spool.

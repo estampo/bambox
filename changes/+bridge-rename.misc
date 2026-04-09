@@ -1,1 +1,0 @@
-Rename bridge binary to bambox-bridge, add xattr fix for macOS, trigger CI on bridge changes

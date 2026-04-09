@@ -1,1 +1,0 @@
-fixup_project_settings() no longer mutates caller-owned dicts or shared defaults.

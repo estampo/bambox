@@ -1,1 +1,0 @@
-Reject duplicate explicit filament slot assignments with a clear error instead of silently overwriting the earlier assignment.
