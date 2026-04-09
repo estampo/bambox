@@ -10,7 +10,9 @@ import pytest
 
 from bambox.credentials import (
     _credentials_path,
+    _escape_toml_value,
     _load_raw,
+    _quote_toml_key,
     _write_credentials,
     cloud_token_json,
     list_printers,
@@ -43,6 +45,67 @@ class TestMaskSerial:
 
     def test_eight_chars(self):
         assert mask_serial("12345678") == "****5678"
+
+
+class TestEscapeTomlValue:
+    def test_plain_string(self):
+        assert _escape_toml_value("hello") == "hello"
+
+    def test_escapes_backslash(self):
+        assert _escape_toml_value("a\\b") == "a\\\\b"
+
+    def test_escapes_double_quote(self):
+        assert _escape_toml_value('say "hi"') == 'say \\"hi\\"'
+
+    def test_escapes_newline(self):
+        assert _escape_toml_value("line1\nline2") == "line1\\nline2"
+
+    def test_combined(self):
+        assert _escape_toml_value('"a\\b\n"') == '\\"a\\\\b\\n\\"'
+
+
+class TestQuoteTomlKey:
+    def test_simple_identifier(self):
+        assert _quote_toml_key("workshop") == "workshop"
+
+    def test_key_with_dot(self):
+        assert _quote_toml_key("my.printer") == '"my.printer"'
+
+    def test_key_with_space(self):
+        assert _quote_toml_key("my printer") == '"my printer"'
+
+    def test_key_with_hyphen(self):
+        # Hyphens are not valid in Python identifiers, so must be quoted
+        assert _quote_toml_key("my-printer") == '"my-printer"'
+
+
+class TestTomlRoundtripSpecialChars:
+    def test_printer_name_with_dot(self, tmp_path, monkeypatch):
+        cred_path = tmp_path / "credentials.toml"
+        monkeypatch.setattr("bambox.credentials._credentials_path", lambda: cred_path)
+
+        save_printer("my.printer", {"type": "bambu-cloud", "serial": "SN001"})
+
+        raw = _load_raw()
+        assert raw["printers"]["my.printer"]["serial"] == "SN001"
+
+    def test_value_with_quotes(self, tmp_path, monkeypatch):
+        cred_path = tmp_path / "credentials.toml"
+        monkeypatch.setattr("bambox.credentials._credentials_path", lambda: cred_path)
+
+        _write_credentials({"cloud": {"token": 'tok"with"quotes', "email": "a@b.com"}})
+
+        raw = _load_raw()
+        assert raw["cloud"]["token"] == 'tok"with"quotes'
+
+    def test_value_with_backslash(self, tmp_path, monkeypatch):
+        cred_path = tmp_path / "credentials.toml"
+        monkeypatch.setattr("bambox.credentials._credentials_path", lambda: cred_path)
+
+        _write_credentials({"cloud": {"token": "tok\\slash", "email": "a@b.com"}})
+
+        raw = _load_raw()
+        assert raw["cloud"]["token"] == "tok\\slash"
 
 
 class TestCredentialsPath:

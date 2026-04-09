@@ -47,7 +47,7 @@ def _mock_response(
 class TestRequestVerificationCode:
     def test_sends_email_code(self):
         resp = _mock_response(200)
-        with patch("bambox.auth.requests.post", return_value=resp) as mock_post:
+        with patch("requests.post", return_value=resp) as mock_post:
             _request_verification_code("user@example.com")
             mock_post.assert_called_once_with(
                 f"{API_BASE}/v1/user-service/user/sendemail/code",
@@ -58,7 +58,7 @@ class TestRequestVerificationCode:
 
     def test_raises_on_http_error(self):
         resp = _mock_response(500, raise_for_status_error=True)
-        with patch("bambox.auth.requests.post", return_value=resp):
+        with patch("requests.post", return_value=resp):
             with pytest.raises(requests.HTTPError):
                 _request_verification_code("user@example.com")
 
@@ -78,14 +78,14 @@ class TestLoginPasswordFlow:
                 "loginType": "password",
             },
         )
-        with patch("bambox.auth.requests.post", return_value=resp):
+        with patch("requests.post", return_value=resp):
             token, refresh = _login("user@example.com", "secret")
             assert token == "tok123"
             assert refresh == "ref456"
 
     def test_password_login_http_error(self):
         resp = _mock_response(401, raise_for_status_error=True)
-        with patch("bambox.auth.requests.post", return_value=resp):
+        with patch("requests.post", return_value=resp):
             with pytest.raises(requests.HTTPError):
                 _login("user@example.com", "wrong")
 
@@ -94,7 +94,7 @@ class TestLoginPasswordFlow:
             200,
             json_data={"loginType": "unknown", "message": "something odd"},
         )
-        with patch("bambox.auth.requests.post", return_value=resp):
+        with patch("requests.post", return_value=resp):
             with pytest.raises(RuntimeError, match="Login failed"):
                 _login("user@example.com", "pw")
 
@@ -103,7 +103,7 @@ class TestLoginPasswordFlow:
             200,
             json_data={"accessToken": "tok", "loginType": "password"},
         )
-        with patch("bambox.auth.requests.post", return_value=resp):
+        with patch("requests.post", return_value=resp):
             token, refresh = _login("user@example.com", "pw")
             assert token == "tok"
             assert refresh == ""
@@ -125,7 +125,7 @@ class TestLoginVerificationCodeFlow:
             json_data={"accessToken": "code_tok", "refreshToken": "code_ref"},
         )
 
-        with patch("bambox.auth.requests.post") as mock_post:
+        with patch("requests.post") as mock_post:
             mock_post.side_effect = [first_resp, code_send_resp, third_resp]
             token, refresh = _login("user@example.com", "pw")
 
@@ -145,7 +145,7 @@ class TestLoginVerificationCodeFlow:
         code_send_resp = _mock_response(200)
         third_resp = _mock_response(200, json_data={"message": "bad code"})
 
-        with patch("bambox.auth.requests.post") as mock_post:
+        with patch("requests.post") as mock_post:
             mock_post.side_effect = [first_resp, code_send_resp, third_resp]
             with pytest.raises(RuntimeError, match="Login failed"):
                 _login("user@example.com", "pw")
@@ -166,7 +166,7 @@ class TestLoginTfaFlow:
             json_data={"accessToken": "tfa_tok", "refreshToken": "tfa_ref"},
         )
 
-        with patch("bambox.auth.requests.post") as mock_post:
+        with patch("requests.post") as mock_post:
             mock_post.side_effect = [first_resp, tfa_resp]
             token, refresh = _login("user@example.com", "pw")
 
@@ -184,7 +184,7 @@ class TestLoginTfaFlow:
         first_resp = _mock_response(200, json_data={"tfaKey": "k"})
         tfa_resp = _mock_response(200, json_data={"error": "invalid code"})
 
-        with patch("bambox.auth.requests.post") as mock_post:
+        with patch("requests.post") as mock_post:
             mock_post.side_effect = [first_resp, tfa_resp]
             with pytest.raises(RuntimeError, match="Login failed"):
                 _login("user@example.com", "pw")
@@ -195,7 +195,7 @@ class TestLoginTfaFlow:
         first_resp = _mock_response(200, json_data={"tfaKey": "k"})
         tfa_resp = _mock_response(403, raise_for_status_error=True)
 
-        with patch("bambox.auth.requests.post") as mock_post:
+        with patch("requests.post") as mock_post:
             mock_post.side_effect = [first_resp, tfa_resp]
             with pytest.raises(requests.HTTPError):
                 _login("user@example.com", "pw")
@@ -212,7 +212,7 @@ class TestGetUserProfile:
             200,
             json_data={"uid": 12345, "name": "Alice", "avatar": "https://img/a.png"},
         )
-        with patch("bambox.auth.requests.get", return_value=resp) as mock_get:
+        with patch("requests.get", return_value=resp) as mock_get:
             profile = _get_user_profile("my_token")
 
         assert profile == {
@@ -225,13 +225,13 @@ class TestGetUserProfile:
 
     def test_missing_fields_default(self):
         resp = _mock_response(200, json_data={})
-        with patch("bambox.auth.requests.get", return_value=resp):
+        with patch("requests.get", return_value=resp):
             profile = _get_user_profile("tok")
         assert profile == {"uid": "", "name": "", "avatar": ""}
 
     def test_http_error_propagates(self):
         resp = _mock_response(401, raise_for_status_error=True)
-        with patch("bambox.auth.requests.get", return_value=resp):
+        with patch("requests.get", return_value=resp):
             with pytest.raises(requests.HTTPError):
                 _get_user_profile("bad_token")
 
@@ -248,7 +248,7 @@ class TestGetDevices:
             {"dev_id": "SN002", "name": "Printer2", "online": False},
         ]
         resp = _mock_response(200, json_data={"devices": devices})
-        with patch("bambox.auth.requests.get", return_value=resp) as mock_get:
+        with patch("requests.get", return_value=resp) as mock_get:
             result = _get_devices("tok")
 
         assert result == devices
@@ -257,16 +257,16 @@ class TestGetDevices:
 
     def test_empty_devices(self):
         resp = _mock_response(200, json_data={"devices": []})
-        with patch("bambox.auth.requests.get", return_value=resp):
+        with patch("requests.get", return_value=resp):
             assert _get_devices("tok") == []
 
     def test_missing_devices_key(self):
         resp = _mock_response(200, json_data={})
-        with patch("bambox.auth.requests.get", return_value=resp):
+        with patch("requests.get", return_value=resp):
             assert _get_devices("tok") == []
 
     def test_http_error_propagates(self):
         resp = _mock_response(403, raise_for_status_error=True)
-        with patch("bambox.auth.requests.get", return_value=resp):
+        with patch("requests.get", return_value=resp):
             with pytest.raises(requests.HTTPError):
                 _get_devices("tok")

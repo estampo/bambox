@@ -6,8 +6,6 @@ import getpass
 import json
 import logging
 
-import requests
-
 log = logging.getLogger(__name__)
 
 API_BASE = "https://api.bambulab.com"
@@ -23,6 +21,8 @@ SLICER_HEADERS = {
 
 def _request_verification_code(email: str) -> None:
     """Request a verification code be sent to the user's email."""
+    import requests
+
     resp = requests.post(
         f"{API_BASE}/v1/user-service/user/sendemail/code",
         headers=SLICER_HEADERS,
@@ -34,6 +34,8 @@ def _request_verification_code(email: str) -> None:
 
 def _login(email: str, password: str) -> tuple[str, str]:
     """Login and return (access_token, refresh_token). Handles all auth flows."""
+
+    import requests
 
     # Step 1: Try password login
     print("  Logging in...")
@@ -87,6 +89,8 @@ def _login(email: str, password: str) -> tuple[str, str]:
 
 def _get_user_profile(token: str) -> dict:
     """Fetch user profile (uid, name, avatar)."""
+    import requests
+
     resp = requests.get(
         f"{API_BASE}/v1/design-user-service/my/preference",
         headers={**SLICER_HEADERS, "Authorization": f"Bearer {token}"},
@@ -102,6 +106,8 @@ def _get_user_profile(token: str) -> dict:
 
 def _get_devices(token: str) -> list[dict]:
     """List printers bound to the account."""
+    import requests
+
     resp = requests.get(
         f"{API_BASE}/v1/iot-service/api/user/bind",
         headers={**SLICER_HEADERS, "Authorization": f"Bearer {token}"},

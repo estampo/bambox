@@ -218,13 +218,6 @@ def _cmd_print(args: argparse.Namespace) -> None:
     if not device_id:
         device_id, _ = _resolve_printer(getattr(args, "printer", None), creds_path)
 
-    if not device_id:
-        print(
-            "Error: --device is required (or run 'bambox login' to configure a printer)",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     project_name = args.project or threemf.stem
 
     # Parse --ams-tray flags (e.g. "2:PETG-CF:2850E0")
@@ -433,11 +426,12 @@ def _name_printers(token: str) -> None:
         dev_name = d.get("name", f"printer-{i + 1}")
         serial = d.get("dev_id", "")
         default = dev_name.lower().replace(" ", "-")
-        raw = input(f"  Name for #{i + 1} [{default}]: ").strip()
+        raw = input(f"  Name for #{i + 1} [{default}] (enter '-' to skip): ").strip()
+        if raw == "-":
+            continue
         name = raw or default
-        if name:
-            save_printer(name, {"type": "bambu-cloud", "serial": serial})
-            print(f"    Saved '{name}' ({mask_serial(serial)})")
+        save_printer(name, {"type": "bambu-cloud", "serial": serial})
+        print(f"    Saved '{name}' ({mask_serial(serial)})")
 
 
 def main(argv: list[str] | None = None) -> None:

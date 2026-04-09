@@ -63,6 +63,18 @@ def _load_raw() -> dict:
         return tomllib.load(f)
 
 
+def _escape_toml_value(val: str) -> str:
+    """Escape a string for use as a TOML basic string value."""
+    return val.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _quote_toml_key(key: str) -> str:
+    """Quote a TOML key if it contains characters that require quoting."""
+    if key.isidentifier() and key.isascii():
+        return key
+    return '"' + _escape_toml_value(key) + '"'
+
+
 def _write_credentials(data: dict) -> None:
     """Write credentials dict to TOML file with 0o600 permissions.
 
@@ -76,14 +88,14 @@ def _write_credentials(data: dict) -> None:
         if cloud:
             f.write("[cloud]\n")
             for key, val in cloud.items():
-                f.write(f'{key} = "{val}"\n')
+                f.write(f'{key} = "{_escape_toml_value(str(val))}"\n')
             f.write("\n")
 
         # Write [printers.*] sections
         for printer_name, creds in data.get("printers", {}).items():
-            f.write(f"[printers.{printer_name}]\n")
+            f.write(f"[printers.{_quote_toml_key(printer_name)}]\n")
             for key, val in creds.items():
-                f.write(f'{key} = "{val}"\n')
+                f.write(f'{key} = "{_escape_toml_value(str(val))}"\n')
             f.write("\n")
 
     if sys.platform != "win32":
@@ -140,17 +152,17 @@ def load_printer_credentials(name: str) -> dict[str, str]:
 
     Environment variable overrides: BAMBU_SERIAL.
     """
-    import tomllib
-
-    path = _credentials_path()
-    if not path.exists():
-        raise RuntimeError(f"Credentials file not found: {path}\nRun 'bambox login' to create it.")
-    with open(path, "rb") as f:
-        raw = tomllib.load(f)
+    raw = _load_raw()
+    if not raw:
+        raise RuntimeError(
+            f"Credentials file not found: {_credentials_path()}\nRun 'bambox login' to create it."
+        )
     printers = raw.get("printers", {})
     if name not in printers:
         available = list(printers.keys())
-        raise RuntimeError(f"Printer '{name}' not found in {path}. Available: {available}")
+        raise RuntimeError(
+            f"Printer '{name}' not found in {_credentials_path()}. Available: {available}"
+        )
     creds = dict(printers[name])
 
     # Env var override for serial
