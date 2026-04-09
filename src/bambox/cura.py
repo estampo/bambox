@@ -296,7 +296,7 @@ class SliceStats:
     filament_used_m: list[float] | None = None  # per-extruder metres
 
 
-def extract_slice_stats(gcode: str) -> SliceStats:
+def extract_slice_stats(gcode: str, flush_volume_mm3: float = 280.0) -> SliceStats:
     """Extract print time and filament usage from CuraEngine G-code.
 
     CuraEngine emits:
@@ -307,6 +307,15 @@ def extract_slice_stats(gcode: str) -> SliceStats:
     We prefer the last ``TIME_ELAPSED`` value (accurate per-layer
     cumulative time) over ``;TIME:`` which CuraEngine often sets to a
     default placeholder (6666).
+
+    For multi-filament prints, CuraEngine does not account for firmware-level
+    purge cycles (the M620/M621 AMS flush). This function adds estimated
+    purge time and filament waste based on the number of tool changes.
+
+    Args:
+        gcode: Raw G-code string.
+        flush_volume_mm3: Purge volume per tool change in mm³ (default 280,
+            matching BambuStudio's ``flush_volumes_matrix`` default).
     """
     stats = SliceStats()
 
@@ -356,5 +365,23 @@ def extract_slice_stats(gcode: str) -> SliceStats:
         total_length += segment_max  # last segment
         if total_length > 0:
             stats.weight = round(total_length * _FILAMENT_AREA * _PLA_DENSITY_G_PER_MM3, 2)
+
+    # Compensate for firmware-level AMS purge cycles that CuraEngine doesn't
+    # know about.  Each T<n> tool change (excluding the initial extruder select
+    # before any extrusion and special T255/T1000) triggers an M620/M621 flush
+    # on real hardware.
+    tool_changes = re.findall(r"^T(\d+)\s*$", gcode, re.MULTILINE)
+    if len(tool_changes) > 1:
+        # First T command is an extruder select, not a purge-triggering change
+        n_purges = len([t for t in tool_changes if int(t) < 255]) - 1
+        if n_purges > 0:
+            # Flush weight: volume × density (flush_volume is in mm³)
+            purge_weight = n_purges * flush_volume_mm3 * _PLA_DENSITY_G_PER_MM3
+            stats.weight = round(stats.weight + purge_weight, 2)
+            # Flush time: ~95s per purge cycle (retract, travel to purge
+            # station, heat, pulsatile flush, wipe, reload, travel back).
+            # Derived from BambuStudio P1S: 81min overhead / 51 purges.
+            _PURGE_TIME_SECS = 95
+            stats.prediction += n_purges * _PURGE_TIME_SECS
 
     return stats
