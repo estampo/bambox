@@ -300,13 +300,17 @@ def extract_slice_stats(gcode: str) -> SliceStats:
     """Extract print time and filament usage from CuraEngine G-code.
 
     CuraEngine emits:
-    * ``;TIME:N`` — total print time in seconds (often placeholder 6666)
+    * ``;TIME:N`` — total print time in seconds (often default 6666)
     * ``;TIME_ELAPSED:N`` — cumulative elapsed time (last value = total)
     * ``;Filament used: X.XXm, Y.YYm`` — per-extruder filament usage
+
+    We prefer the last ``TIME_ELAPSED`` value (accurate per-layer
+    cumulative time) over ``;TIME:`` which CuraEngine often sets to a
+    default placeholder (6666).
     """
     stats = SliceStats()
 
-    # Time: prefer last TIME_ELAPSED (accurate) over ;TIME: (often 6666)
+    # Time: prefer last TIME_ELAPSED (accurate) over ;TIME: (often 6666 default)
     elapsed = re.findall(r";TIME_ELAPSED:([\d.]+)", gcode)
     if elapsed:
         stats.prediction = int(float(elapsed[-1]))
