@@ -324,6 +324,42 @@ def _cmd_print(args: argparse.Namespace) -> None:
             }
         )
 
+    # Show print summary from 3MF metadata
+    _show_print_info(threemf)
+
+    if args.dry_run:
+        # Dry run: query AMS and show mapping, but don't send
+        if not args.no_ams_mapping:
+            from bambox.bridge import (
+                _build_ams_mapping,
+                _write_token_json,
+                parse_ams_trays,
+                query_status,
+            )
+
+            token_file = _write_token_json(credentials, directory=threemf.parent)
+            try:
+                if not ams_trays:
+                    try:
+                        live_status = query_status(device_id, token_file, verbose=args.verbose)
+                        ams_trays = parse_ams_trays(live_status)
+                    except Exception as e:
+                        print(f"Warning: could not query AMS state: {e}", file=sys.stderr)
+                if ams_trays:
+                    try:
+                        ams_data = _build_ams_mapping(threemf, ams_trays)
+                        mapping = ams_data["amsMapping"]
+                        _show_ams_mapping(threemf, ams_trays, mapping)
+                    except RuntimeError as e:
+                        print(f"AMS mapping error: {e}", file=sys.stderr)
+            finally:
+                try:
+                    token_file.unlink()
+                except OSError:
+                    pass
+        print("Dry run — not sending to printer.")
+        return
+
     print(f"Sending {threemf.name} to {device_id}...")
     try:
         result = cloud_print(
@@ -351,6 +387,89 @@ def _cmd_print(args: argparse.Namespace) -> None:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def _show_print_info(threemf: Path) -> None:
+    """Display print metadata (time, weight, layers, filaments) from a 3MF."""
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    from bambox.bridge import _xml_ns
+
+    try:
+        with zipfile.ZipFile(threemf, "r") as z:
+            # Extract slice_info for filaments and prediction
+            prediction = 0
+            weight = 0.0
+            filaments: list[tuple[str, str, str, str]] = []  # (type, color, used_m, used_g)
+
+            if "Metadata/slice_info.config" in z.namelist():
+                root = ET.fromstring(z.read("Metadata/slice_info.config"))
+                ns = _xml_ns(root)
+                plate_el = root.find(f"{ns}plate")
+                if plate_el is not None:
+                    # Metadata is stored as <metadata key="X" value="Y"/> children
+                    meta = {}
+                    for md in plate_el.findall(f"{ns}metadata"):
+                        meta[md.get("key", "")] = md.get("value", "")
+                    try:
+                        prediction = int(meta.get("prediction", "0"))
+                    except ValueError:
+                        pass
+                    try:
+                        weight = float(meta.get("weight", "0"))
+                    except ValueError:
+                        pass
+                    for f in plate_el.findall(f"{ns}filament"):
+                        filaments.append((
+                            f.get("type", "?"),
+                            f.get("color", "?"),
+                            f.get("used_m", "0"),
+                            f.get("used_g", "0"),
+                        ))
+
+            # Extract layer count from G-code header
+            layers = 0
+            gcode_name = None
+            for name in z.namelist():
+                if name.startswith("Metadata/plate_") and name.endswith(".gcode"):
+                    gcode_name = name
+                    break
+            if gcode_name:
+                # Read just the header (first 4KB)
+                gcode_head = z.read(gcode_name)[:4096].decode(errors="replace")
+                import re
+
+                m = re.search(r"; total layer number:\s*(\d+)", gcode_head)
+                if m:
+                    layers = int(m.group(1))
+                else:
+                    m = re.search(r";LAYER_COUNT:(\d+)", gcode_head)
+                    if m:
+                        layers = int(m.group(1))
+
+    except (zipfile.BadZipFile, ET.ParseError, KeyError) as e:
+        print(f"Warning: could not read 3MF metadata: {e}", file=sys.stderr)
+        return
+
+    # Format time
+    if prediction > 0:
+        hrs, remainder = divmod(prediction, 3600)
+        mins = remainder // 60
+        time_str = f"{hrs}h{mins}m" if hrs else f"{mins}m"
+    else:
+        time_str = "unknown"
+
+    print(f"\nPrint: {threemf.name}")
+    if layers:
+        print(f"  Layers:    {layers}")
+    print(f"  Time:      {time_str}")
+    print(f"  Weight:    {weight:.1f}g")
+    if filaments:
+        print("  Filaments:")
+        for ftype, color, used_m, used_g in filaments:
+            print(f"    - {ftype} {color}  ({used_m}m / {used_g}g)")
+    print()
 
 
 def _show_ams_mapping(
@@ -641,6 +760,12 @@ def main(argv: list[str] | None = None) -> None:
         action="append",
         metavar="SLOT:TYPE:COLOR",
         help="Manually specify AMS tray (e.g. '2:PETG-CF:2850E0'). Repeatable.",
+    )
+    print_p.add_argument(
+        "-n",
+        "--dry-run",
+        action="store_true",
+        help="Show print info and AMS mapping without sending",
     )
 
     # --- validate subcommand ---
