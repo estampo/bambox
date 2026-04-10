@@ -456,6 +456,8 @@ def repack_3mf(
             "Metadata/plate_1.png",
             "Metadata/plate_no_light_1.png",
             "Metadata/plate_1_small.png",
+            "Metadata/top_1.png",
+            "Metadata/pick_1.png",
         ]
         thumbnail_overrides: dict[str, bytes] = {}
 
@@ -479,7 +481,7 @@ def repack_3mf(
                 try:
                     from bambox.thumbnail import gcode_thumbnail
 
-                    size = 128 if "small" in fname else 256
+                    size = 128 if "small" in fname else 512
                     thumbnail_overrides[fname] = gcode_thumbnail(gcode_str, size, size)
                 except Exception:
                     thumbnail_overrides[fname] = _PLACEHOLDER_PNG
@@ -612,26 +614,31 @@ def pack_gcode_3mf(
                     from bambox.thumbnail import gcode_thumbnail
 
                     gcode_str = gcode if isinstance(gcode, str) else gcode.decode(errors="replace")
-                    main_png = gcode_thumbnail(gcode_str, 256, 256)
+                    main_png = gcode_thumbnail(gcode_str, 512, 512)
                     small_png = gcode_thumbnail(gcode_str, 128, 128)
                     thumb_map = {
                         "Metadata/plate_1.png": main_png,
                         "Metadata/plate_no_light_1.png": main_png,
                         "Metadata/plate_1_small.png": small_png,
+                        "Metadata/top_1.png": main_png,
+                        "Metadata/pick_1.png": main_png,
                     }
                 except Exception:
                     pass  # fall back to placeholder
+            extra = extra_files or {}
             for path in [
                 "Metadata/plate_1.png",
                 "Metadata/plate_no_light_1.png",
                 "Metadata/plate_1_small.png",
+                "Metadata/top_1.png",
+                "Metadata/pick_1.png",
             ]:
-                z.writestr(path, thumb_map.get(path, _PLACEHOLDER_PNG))
+                if path not in extra:
+                    z.writestr(path, thumb_map.get(path, _PLACEHOLDER_PNG))
 
-            # Extra files (e.g. top_1.png, pick_1.png, cut_information.xml)
-            if extra_files:
-                for path, data in extra_files.items():
-                    z.writestr(path, data)
+            # Extra files (e.g. custom thumbnails, cut_information.xml)
+            for path, data in extra.items():
+                z.writestr(path, data)
     finally:
         if should_close:
             fh.close()
