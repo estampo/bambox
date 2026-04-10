@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +14,8 @@ from bambox.bridge import (
     _run_bridge_baked,
     _run_bridge_docker,
 )
+
+_HAS_GETUID = hasattr(os, "getuid")
 
 # -- _run_bridge_docker --------------------------------------------------------
 
@@ -34,19 +37,21 @@ class TestRunBridgeDocker:
     def test_bind_mount_basic_args(self):
         """Non-file args should be passed through without -v mounts."""
         with patch("bambox.bridge.subprocess.run") as mock_run:
-            # First call = docker info (succeeds), second = docker run
+            # docker info → docker pull → docker run
             mock_run.side_effect = [
+                subprocess.CompletedProcess([], 0, "", ""),
                 subprocess.CompletedProcess([], 0, "", ""),
                 subprocess.CompletedProcess([], 0, '{"result":"ok"}', ""),
             ]
             result = _run_bridge_docker(["status", "DEV1", "/tmp/token.json"])
 
-            docker_run_call = mock_run.call_args_list[1]
+            docker_run_call = mock_run.call_args_list[2]
             cmd = docker_run_call[0][0]
             assert cmd[0] == "docker"
             assert cmd[1] == "run"
             assert "--rm" in cmd
             assert "--platform" in cmd
+            assert ("--user" in cmd) == _HAS_GETUID
             assert DOCKER_IMAGE in cmd
             assert "status" in cmd
             assert "DEV1" in cmd
@@ -59,12 +64,13 @@ class TestRunBridgeDocker:
 
         with patch("bambox.bridge.subprocess.run") as mock_run:
             mock_run.side_effect = [
-                subprocess.CompletedProcess([], 0, "", ""),
-                subprocess.CompletedProcess([], 0, '{"result":"ok"}', ""),
+                subprocess.CompletedProcess([], 0, "", ""),  # docker info
+                subprocess.CompletedProcess([], 0, "", ""),  # docker pull
+                subprocess.CompletedProcess([], 0, '{"result":"ok"}', ""),  # docker run
             ]
             _run_bridge_docker(["print", str(test_file), "DEV1"])
 
-            docker_run_call = mock_run.call_args_list[1]
+            docker_run_call = mock_run.call_args_list[2]
             cmd = docker_run_call[0][0]
             # Should have a -v flag for the file
             assert "-v" in cmd
@@ -77,12 +83,13 @@ class TestRunBridgeDocker:
         """verbose=True should add -v to Docker run command."""
         with patch("bambox.bridge.subprocess.run") as mock_run:
             mock_run.side_effect = [
-                subprocess.CompletedProcess([], 0, "", ""),
-                subprocess.CompletedProcess([], 0, '{"result":"ok"}', ""),
+                subprocess.CompletedProcess([], 0, "", ""),  # docker info
+                subprocess.CompletedProcess([], 0, "", ""),  # docker pull
+                subprocess.CompletedProcess([], 0, '{"result":"ok"}', ""),  # docker run
             ]
             _run_bridge_docker(["status", "DEV1"], verbose=True)
 
-            cmd = mock_run.call_args_list[1][0][0]
+            cmd = mock_run.call_args_list[2][0][0]
             # -v should appear after the image name (as bridge arg, not docker arg)
             image_idx = cmd.index(DOCKER_IMAGE)
             tail = cmd[image_idx + 1 :]
@@ -99,6 +106,7 @@ class TestRunBridgeDocker:
         ):
             mock_run.side_effect = [
                 subprocess.CompletedProcess([], 0, "", ""),  # docker info
+                subprocess.CompletedProcess([], 0, "", ""),  # docker pull
                 subprocess.CompletedProcess([], 1, "", "cannot read /input/test.3mf"),
             ]
             mock_baked.return_value = subprocess.CompletedProcess([], 0, '{"result":"ok"}', "")
@@ -117,6 +125,7 @@ class TestRunBridgeDocker:
         ):
             mock_run.side_effect = [
                 subprocess.CompletedProcess([], 0, "", ""),  # docker info
+                subprocess.CompletedProcess([], 0, "", ""),  # docker pull
                 subprocess.CompletedProcess([], 1, "", "some other error"),
             ]
             result = _run_bridge_docker(["print", str(test_file), "DEV1"])
@@ -130,7 +139,8 @@ class TestRunBridgeDocker:
             patch("bambox.bridge._run_bridge_baked") as mock_baked,
         ):
             mock_run.side_effect = [
-                subprocess.CompletedProcess([], 0, "", ""),
+                subprocess.CompletedProcess([], 0, "", ""),  # docker info
+                subprocess.CompletedProcess([], 0, "", ""),  # docker pull
                 subprocess.CompletedProcess([], 1, "", "cannot read something"),
             ]
             result = _run_bridge_docker(["status", "DEV1"])
@@ -167,10 +177,11 @@ class TestRunBridgeBaked:
             build_cmd = build_call[0][0]
             assert build_cmd[:3] == ["docker", "build", "-t"]
 
-            # Verify docker run was called
+            # Verify docker run was called (with --user on Unix)
             run_call = mock_run.call_args_list[1]
             run_cmd = run_call[0][0]
             assert run_cmd[0:2] == ["docker", "run"]
+            assert ("--user" in run_cmd) == _HAS_GETUID
             assert "/input/test.3mf" in run_cmd
 
             # Verify cleanup (docker rmi)
