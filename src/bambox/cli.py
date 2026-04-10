@@ -169,6 +169,18 @@ def _cmd_pack(args: argparse.Namespace) -> None:
     # Extract print time and filament weight from slicer G-code comments
     stats = extract_slice_stats(gcode_str)
 
+    # Populate per-filament usage from stats
+    if stats.filament_used_m:
+        from bambox.cura import _PLA_DENSITY_G_PER_MM3
+        from bambox.gcode_compat import _FILAMENT_AREA
+
+        for fi in filament_infos:
+            slot_idx = fi.slot - 1  # FilamentInfo is 1-indexed
+            if slot_idx < len(stats.filament_used_m):
+                fi.used_m = stats.filament_used_m[slot_idx]
+                length_mm = stats.filament_used_m[slot_idx] * 1000
+                fi.used_g = round(length_mm * _FILAMENT_AREA * _PLA_DENSITY_G_PER_MM3, 2)
+
     info = SliceInfo(
         printer_model_id=printer_model_id,
         nozzle_diameter=args.nozzle_diameter,
@@ -421,12 +433,14 @@ def _show_print_info(threemf: Path) -> None:
                     except ValueError:
                         pass
                     for f in plate_el.findall(f"{ns}filament"):
-                        filaments.append((
-                            f.get("type", "?"),
-                            f.get("color", "?"),
-                            f.get("used_m", "0"),
-                            f.get("used_g", "0"),
-                        ))
+                        filaments.append(
+                            (
+                                f.get("type", "?"),
+                                f.get("color", "?"),
+                                f.get("used_m", "0"),
+                                f.get("used_g", "0"),
+                            )
+                        )
 
             # Extract layer count from G-code header
             layers = 0
@@ -472,9 +486,7 @@ def _show_print_info(threemf: Path) -> None:
     print()
 
 
-def _show_ams_mapping(
-    threemf: Path, ams_trays: list[dict], mapping: list[int]
-) -> None:
+def _show_ams_mapping(threemf: Path, ams_trays: list[dict], mapping: list[int]) -> None:
     """Display the AMS filament mapping that will be used for the print."""
     import xml.etree.ElementTree as ET
     import zipfile
