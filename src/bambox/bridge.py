@@ -231,10 +231,13 @@ def _run_bridge_baked(
     try:
         # Write Dockerfile
         lines = [f"FROM {DOCKER_IMAGE}"]
+        # Ensure writable dirs the Bambu Network Library expects
+        lines.append("RUN chmod -R 777 /tmp/bambu_agent /tmp/bambu_plugin")
         for host_path, container_path in file_args.items():
             basename = os.path.basename(host_path)
             shutil.copy2(host_path, tmpdir / basename)
             lines.append(f"COPY {basename} {container_path}")
+            lines.append(f"RUN chmod 644 {container_path}")
         (tmpdir / "Dockerfile").write_text("\n".join(lines) + "\n")
 
         tag = "bambox-bridge-tmp"
