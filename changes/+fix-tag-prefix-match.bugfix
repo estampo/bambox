@@ -1,0 +1,1 @@
+Fix release pipeline false-positive tag detection when a pre-release tag exists (e.g. v0.3.0rc1 blocked v0.3.0)
