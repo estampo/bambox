@@ -301,16 +301,12 @@ class TestCliPack:
             ps = json.loads(z.read("Metadata/project_settings.config"))
             # Should have 544+ keys
             assert len(ps) > 500
-            # Per-filament arrays padded to 5 (skip fixed-length machine lists)
-            _FIXED_LIST_KEYS = {
-                "bed_exclude_area",
-                "print_compatible_printers",
-                "printable_area",
-                "start_end_points",
-                "upward_compatible_machine",
-            }
+            # Per-filament varying arrays must be padded to 5 slots
+            from bambox.settings import _DATA_DIR, _load_json
+
+            _varying = set(_load_json(_DATA_DIR / "_varying_keys.json"))
             for key, val in ps.items():
-                if isinstance(val, list) and len(val) > 0 and key not in _FIXED_LIST_KEYS:
+                if key in _varying and isinstance(val, list):
                     assert len(val) >= 5, f"{key} has {len(val)} elements"
 
     def test_pack_multi_filament(self, tmp_path: Path) -> None:
@@ -474,16 +470,12 @@ class TestRepack:
             ps = json.loads(z.read("Metadata/project_settings.config"))
             # Regenerated from profiles = 544+ keys
             assert len(ps) > 500
-            # Per-filament arrays padded to 5 (skip fixed-length machine lists)
-            _FIXED_LIST_KEYS = {
-                "bed_exclude_area",
-                "print_compatible_printers",
-                "printable_area",
-                "start_end_points",
-                "upward_compatible_machine",
-            }
+            # Per-filament varying arrays must be padded to 5 slots
+            from bambox.settings import _DATA_DIR, _load_json
+
+            _varying = set(_load_json(_DATA_DIR / "_varying_keys.json"))
             for key, val in ps.items():
-                if isinstance(val, list) and len(val) > 0 and key not in _FIXED_LIST_KEYS:
+                if key in _varying and isinstance(val, list):
                     assert len(val) >= 5, f"{key} has {len(val)} elements"
 
     def test_fixes_model_settings(self, tmp_path: Path) -> None:
