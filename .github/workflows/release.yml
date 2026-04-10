@@ -48,7 +48,7 @@ jobs:
           fi
 
           if [[ -n "$VERSION" ]]; then
-            if gh api "repos/${{ github.repository }}/git/refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            if git ls-remote --tags origin "refs/tags/v${VERSION}" | grep -q .; then
               echo "::warning::Tag v${VERSION} already exists — skipping"
               echo "is_release=false" >> "$GITHUB_OUTPUT"
             else
@@ -160,7 +160,7 @@ jobs:
       - name: Create and push tag (if it doesn't exist)
         run: |
           VERSION="${{ needs.version.outputs.version }}"
-          if gh api "repos/${{ github.repository }}/git/refs/tags/v${VERSION}" >/dev/null 2>&1; then
+          if git ls-remote --tags origin "refs/tags/v${VERSION}" | grep -q .; then
             echo "::notice::Tag v${VERSION} already exists — skipping"
           else
             git tag "v${VERSION}"
