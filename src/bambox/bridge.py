@@ -177,9 +177,17 @@ def _run_bridge_docker(
     if docker_info.returncode != 0:
         raise RuntimeError(f"bambox-bridge not found and Docker is not running.\n{install_hint}")
 
+    # Pull image if not present (or if a newer version is available)
+    subprocess.run(
+        ["docker", "pull", "--quiet", DOCKER_IMAGE],
+        capture_output=True,
+        timeout=120,
+    )
+
     # Collect local file paths for potential bake fallback
+    uid_gid = f"{os.getuid()}:{os.getgid()}"
     file_args: dict[str, str] = {}  # host_path -> container_path
-    cmd: list[str] = ["docker", "run", "--rm", "--platform", "linux/amd64"]
+    cmd: list[str] = ["docker", "run", "--rm", "--platform", "linux/amd64", "--user", uid_gid]
     docker_args: list[str] = []
     for arg in args:
         if os.path.exists(arg):
@@ -248,7 +256,17 @@ def _run_bridge_baked(
             else:
                 docker_args.append(arg)
 
-        cmd = ["docker", "run", "--rm", "--platform", "linux/amd64", tag] + docker_args
+        uid_gid = f"{os.getuid()}:{os.getgid()}"
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "--platform",
+            "linux/amd64",
+            "--user",
+            uid_gid,
+            tag,
+        ] + docker_args
         if verbose:
             cmd.append("-v")
 
