@@ -77,6 +77,9 @@ MODEL_XML = """\
  <metadata name="License"></metadata>
  <metadata name="ModificationDate"></metadata>
  <metadata name="Origin"></metadata>
+ <metadata name="ProfileCover"></metadata>
+ <metadata name="ProfileDescription"></metadata>
+ <metadata name="ProfileTitle"></metadata>
  <metadata name="Title"></metadata>
  <resources>
  </resources>
@@ -165,17 +168,17 @@ class SliceInfo:
     objects: list[ObjectInfo] = field(default_factory=list)
     warnings: list[WarningInfo] = field(default_factory=list)
     plate_data: dict[str, object] | None = None  # raw plate_1.json passthrough
-    application: str = "BambuStudio-2.3.1"
+    application: str = "BambuStudio-02.05.00.66"
     model_xml: str = ""  # raw 3D/3dmodel.model passthrough (overrides application)
-    # BBS 02.05+ fields (optional, omitted if empty/zero)
-    client_version: str = ""  # e.g. "02.05.00.66"
-    extruder_type: int | None = None
-    nozzle_volume_type: int | None = None
+    # BBS 02.05+ fields
+    client_version: str = "02.05.00.66"
+    extruder_type: int = 0
+    nozzle_volume_type: int = 0
     first_layer_time: float | None = None
     filament_maps: str = ""  # override filament_maps in slice_info (e.g. "1 1 1 1 1")
-    limit_filament_maps: str = ""  # e.g. "0 0 0 0 0"
+    limit_filament_maps: str = "0 0 0 0 0"
     layer_filament_lists: list[dict[str, str]] | None = None  # [{filament_list, layer_ranges}]
-    filament_volume_maps: str = ""  # e.g. "0 0 0 0 0" (BBS 02.05+)
+    filament_volume_maps: str = "0 0 0 0 0"  # BBS 02.05+
 
 
 def _filament_maps_str(min_slots: int = MIN_SLOTS) -> str:
@@ -207,7 +210,7 @@ class WarningInfo:
 
 def _slice_info_xml(info: SliceInfo) -> str:
     """Generate Metadata/slice_info.config XML."""
-    filament_maps = info.filament_maps or "1"
+    filament_maps = info.filament_maps or _filament_maps_str()
 
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -220,15 +223,8 @@ def _slice_info_xml(info: SliceInfo) -> str:
         '    <metadata key="index" value="1"/>',
     ]
 
-    # BBS 02.05+ optional metadata
-    if info.extruder_type is not None:
-        lines.append(
-            f'    <metadata key="extruder_type" value="{xml_escape(str(info.extruder_type))}"/>'
-        )
-    if info.nozzle_volume_type is not None:
-        lines.append(
-            f'    <metadata key="nozzle_volume_type" value="{xml_escape(str(info.nozzle_volume_type))}"/>'
-        )
+    lines.append(f'    <metadata key="extruder_type" value="{info.extruder_type}"/>')
+    lines.append(f'    <metadata key="nozzle_volume_type" value="{info.nozzle_volume_type}"/>')
 
     lines.extend(
         [
@@ -460,6 +456,8 @@ def repack_3mf(
             "Metadata/plate_1.png",
             "Metadata/plate_no_light_1.png",
             "Metadata/plate_1_small.png",
+            "Metadata/top_1.png",
+            "Metadata/pick_1.png",
         ]
         thumbnail_overrides: dict[str, bytes] = {}
 
@@ -483,7 +481,7 @@ def repack_3mf(
                 try:
                     from bambox.thumbnail import gcode_thumbnail
 
-                    size = 128 if "small" in fname else 256
+                    size = 128 if "small" in fname else 512
                     thumbnail_overrides[fname] = gcode_thumbnail(gcode_str, size, size)
                 except Exception:
                     thumbnail_overrides[fname] = _PLACEHOLDER_PNG
@@ -616,26 +614,31 @@ def pack_gcode_3mf(
                     from bambox.thumbnail import gcode_thumbnail
 
                     gcode_str = gcode if isinstance(gcode, str) else gcode.decode(errors="replace")
-                    main_png = gcode_thumbnail(gcode_str, 256, 256)
+                    main_png = gcode_thumbnail(gcode_str, 512, 512)
                     small_png = gcode_thumbnail(gcode_str, 128, 128)
                     thumb_map = {
                         "Metadata/plate_1.png": main_png,
                         "Metadata/plate_no_light_1.png": main_png,
                         "Metadata/plate_1_small.png": small_png,
+                        "Metadata/top_1.png": main_png,
+                        "Metadata/pick_1.png": main_png,
                     }
                 except Exception:
                     pass  # fall back to placeholder
+            extra = extra_files or {}
             for path in [
                 "Metadata/plate_1.png",
                 "Metadata/plate_no_light_1.png",
                 "Metadata/plate_1_small.png",
+                "Metadata/top_1.png",
+                "Metadata/pick_1.png",
             ]:
-                z.writestr(path, thumb_map.get(path, _PLACEHOLDER_PNG))
+                if path not in extra:
+                    z.writestr(path, thumb_map.get(path, _PLACEHOLDER_PNG))
 
-            # Extra files (e.g. top_1.png, pick_1.png, cut_information.xml)
-            if extra_files:
-                for path, data in extra_files.items():
-                    z.writestr(path, data)
+            # Extra files (e.g. custom thumbnails, cut_information.xml)
+            for path, data in extra.items():
+                z.writestr(path, data)
     finally:
         if should_close:
             fh.close()

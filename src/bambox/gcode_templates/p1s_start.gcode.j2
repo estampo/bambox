@@ -1,5 +1,5 @@
-;===== machine: P1S ========================
-;===== date: 20231107 =====================
+;===== machine: P1S-0.4 ========================
+;===== date: 20251031 =====================
 ;===== turn on the HB fan & MC board fan =================
 M104 S75 ;set extruder temp to turn on the HB fan and prevent filament oozing from nozzle
 M710 A1 S255 ;turn on MC fan by default(P1S)
@@ -23,7 +23,7 @@ G29.1 Z{{ +0.0 }} ; clear z-trim value first
 M204 S10000 ; init ACC set to 10m/s^2
 
 ;===== heatbed preheat ====================
-M1002 gcode_claim_action : 2
+M1002 gcode_claim_action:54
 M140 S{{ bed_temperature_initial_layer_single }} ;set bed temp
 M190 S{{ bed_temperature_initial_layer_single }} ;wait for bed temp
 
@@ -252,7 +252,7 @@ G0 Y11 E0.700 F{{ outer_wall_volumetric_speed/(0.3*0.5)/ 4 * 60 }}
 G0 X239.5
 G0 E0.2
 G0 Y1.5 E0.700
-G0 X25 E15 F{{ outer_wall_volumetric_speed/(0.3*0.5)     * 60 }}
+G0 X18 E15 F{{ outer_wall_volumetric_speed/(0.3*0.5)     * 60 }}
 M400
 
 ;===== for Textured PEI Plate , lower the nozzle as the nozzle was touching topmost of the texture when homing ==

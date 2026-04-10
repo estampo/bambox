@@ -265,7 +265,16 @@ def build_template_context(
         ctx["nozzle_diameter"] = float(headers["NOZZLE_DIAMETER"])
 
     if "BED_TYPE" in headers:
-        ctx["curr_bed_type"] = headers["BED_TYPE"]
+        # CuraEngine emits the internal key (e.g. "textured_pei_plate") while
+        # templates expect the display name (e.g. "Textured PEI Plate").
+        _BED_TYPE_DISPLAY: dict[str, str] = {
+            "cool_plate": "Cool Plate",
+            "engineering_plate": "Engineering Plate",
+            "high_temp_plate": "High Temp Plate",
+            "textured_pei_plate": "Textured PEI Plate",
+        }
+        raw = headers["BED_TYPE"]
+        ctx["curr_bed_type"] = _BED_TYPE_DISPLAY.get(raw, raw)
 
     # Defaults needed by templates
     ctx.setdefault("initial_extruder", 0)
@@ -278,6 +287,65 @@ def build_template_context(
     ctx.setdefault("filament_area", _FILAMENT_AREA)
 
     return ctx
+
+
+# ---------------------------------------------------------------------------
+# First-layer bounding box (for adaptive bed leveling)
+# ---------------------------------------------------------------------------
+
+
+def first_layer_bbox(gcode: str) -> tuple[list[float], list[float]] | None:
+    """Extract first layer bounding box from G-code extrusion moves.
+
+    Returns ``(print_min, print_size)`` as ``([x, y], [w, h])`` in mm,
+    or ``None`` if no first-layer moves found.  Used to populate
+    ``first_layer_print_min`` and ``first_layer_print_size`` for
+    adaptive bed leveling (``G29 A X... Y... I... J...``).
+    """
+    # Find the first layer section
+    layer0_start = None
+    layer1_start = None
+    for m in re.finditer(r";LAYER:(\d+)", gcode):
+        if m.group(1) == "0":
+            layer0_start = m.end()
+        elif layer0_start is not None:
+            layer1_start = m.start()
+            break
+
+    if layer0_start is None:
+        return None
+
+    section = gcode[layer0_start:layer1_start] if layer1_start else gcode[layer0_start:]
+
+    # Parse extrusion moves in the first layer
+    x = y = 0.0
+    min_x = min_y = float("inf")
+    max_x = max_y = float("-inf")
+    found = False
+    for line in section.splitlines():
+        line = line.strip()
+        if not re.match(r"G[01]\s", line):
+            continue
+        xm = re.search(r"X([\d.]+)", line)
+        ym = re.search(r"Y([\d.]+)", line)
+        em = re.search(r"E[\d.]", line)
+        nx = float(xm.group(1)) if xm else x
+        ny = float(ym.group(1)) if ym else y
+        if em is not None:
+            min_x = min(min_x, nx)
+            max_x = max(max_x, nx)
+            min_y = min(min_y, ny)
+            max_y = max(max_y, ny)
+            found = True
+        x, y = nx, ny
+
+    if not found:
+        return None
+
+    return [round(min_x, 2), round(min_y, 2)], [
+        round(max_x - min_x, 2),
+        round(max_y - min_y, 2),
+    ]
 
 
 # ---------------------------------------------------------------------------
