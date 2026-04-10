@@ -213,6 +213,15 @@ def _cmd_pack(args: argparse.Namespace) -> None:
             toolpath = rewrite_tool_changes(toolpath, project_settings, machine)
 
         ctx = build_template_context(headers, project_settings)
+
+        # Derive first-layer bounding box for adaptive bed leveling
+        from bambox.cura import first_layer_bbox
+
+        bbox = first_layer_bbox(toolpath)
+        if bbox:
+            ctx["first_layer_print_min"] = bbox[0]
+            ctx["first_layer_print_size"] = bbox[1]
+
         start = render_template(f"{machine}_start.gcode.j2", ctx)
         end = render_template(f"{machine}_end.gcode.j2", ctx)
         gcode_bytes = assemble_gcode(start, toolpath, end).encode()
