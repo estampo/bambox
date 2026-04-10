@@ -41,22 +41,22 @@ def heading(text: str) -> None:
 
 def success(text: str) -> None:
     """Print a success line with green checkmark."""
-    console.print(f"  [green]\u2714[/green] {text}")
+    console.print(f"  [green]\u2714[/green] {text}", soft_wrap=True)
 
 
 def warn(text: str) -> None:
     """Print a warning line."""
-    err_console.print(f"  [yellow]\u26a0[/yellow] {text}")
+    err_console.print(f"  [yellow]\u26a0[/yellow] {text}", soft_wrap=True)
 
 
 def error(text: str) -> None:
     """Print an error line."""
-    err_console.print(f"  [red]\u2718[/red] {escape(text)}")
+    err_console.print(f"  [red]\u2718[/red] {escape(text)}", soft_wrap=True)
 
 
 def info(text: str) -> None:
     """Print an info line."""
-    console.print(f"  [dim]{text}[/dim]")
+    console.print(f"  [dim]{text}[/dim]", soft_wrap=True)
 
 
 # ---------------------------------------------------------------------------
