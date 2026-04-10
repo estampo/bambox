@@ -244,4 +244,6 @@ class TestRunBridgeBaked:
         assert len(dockerfiles_written) == 1
         df = dockerfiles_written[0]
         assert df.startswith(f"FROM {DOCKER_IMAGE}")
+        assert "RUN chmod -R 777 /tmp/bambu_agent /tmp/bambu_plugin" in df
         assert "COPY test.3mf /input/test.3mf" in df
+        assert "RUN chmod 644 /input/test.3mf" in df

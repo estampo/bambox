@@ -1,0 +1,1 @@
+Fix baked Docker fallback permissions so bridge runs correctly with --user uid:gid
