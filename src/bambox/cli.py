@@ -179,9 +179,7 @@ def _cmd_pack(args: argparse.Namespace) -> None:
             if slot_idx < len(stats.filament_used_m):
                 fi.used_m = stats.filament_used_m[slot_idx]
                 length_mm = stats.filament_used_m[slot_idx] * 1000
-                fi.used_g = round(
-                    length_mm * _FILAMENT_AREA * _PLA_DENSITY_G_PER_MM3, 2
-                )
+                fi.used_g = round(length_mm * _FILAMENT_AREA * _PLA_DENSITY_G_PER_MM3, 2)
 
     info = SliceInfo(
         printer_model_id=printer_model_id,
@@ -435,12 +433,14 @@ def _show_print_info(threemf: Path) -> None:
                     except ValueError:
                         pass
                     for f in plate_el.findall(f"{ns}filament"):
-                        filaments.append((
-                            f.get("type", "?"),
-                            f.get("color", "?"),
-                            f.get("used_m", "0"),
-                            f.get("used_g", "0"),
-                        ))
+                        filaments.append(
+                            (
+                                f.get("type", "?"),
+                                f.get("color", "?"),
+                                f.get("used_m", "0"),
+                                f.get("used_g", "0"),
+                            )
+                        )
 
             # Extract layer count from G-code header
             layers = 0
@@ -486,9 +486,7 @@ def _show_print_info(threemf: Path) -> None:
     print()
 
 
-def _show_ams_mapping(
-    threemf: Path, ams_trays: list[dict], mapping: list[int]
-) -> None:
+def _show_ams_mapping(threemf: Path, ams_trays: list[dict], mapping: list[int]) -> None:
     """Display the AMS filament mapping that will be used for the print."""
     import xml.etree.ElementTree as ET
     import zipfile
