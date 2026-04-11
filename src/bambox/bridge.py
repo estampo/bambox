@@ -1,7 +1,7 @@
 """Cloud printing via the Bambu cloud bridge.
 
 Wraps the ``bambox-bridge`` binary (preferred) or falls back to the
-``estampo/cloud-bridge`` Docker container for sending prints, querying status,
+``estampo/bambox-bridge`` Docker image for sending prints, querying status,
 and managing AMS tray mapping.  No dependency on the estampo package — this
 module is self-contained for standalone bambox usage.
 """
@@ -31,7 +31,7 @@ def _xml_ns(root: ET.Element) -> str:
     return ""
 
 
-DOCKER_IMAGE = "estampo/cloud-bridge:bambu-02.05.00.00"
+DOCKER_IMAGE = "estampo/bambox-bridge:bambu-02.05.00.00"
 
 # ---------------------------------------------------------------------------
 # Credentials
@@ -124,7 +124,6 @@ def _run_bridge(
 
     1. Local ``bambox-bridge`` binary (no Docker overhead)
     2. Docker bind-mount mode
-    3. Docker baked-image fallback (for sandboxed environments)
     """
     local = _find_local_bridge()
     if local:
@@ -134,36 +133,6 @@ def _run_bridge(
     return _run_bridge_docker(args, timeout=timeout, verbose=verbose)
 
 
-def _translate_args_for_rust_bridge(args: list[str]) -> list[str]:
-    """Translate C++ bridge positional args to Rust bridge CLI shape.
-
-    The C++ bridge uses positional token files:
-      status <device_id> <token_file>
-      cancel <device_id> <token_file>
-      print <3mf> <device_id> <token_file> [--flags...]
-
-    The Rust bridge uses ``-c <token_file>`` as a global flag:
-      -c <token_file> status <device_id>
-      -c <token_file> cancel <device_id>
-      -c <token_file> print <3mf> <device_id> [--flags...]
-    """
-    if not args:
-        return args
-
-    subcmd = args[0]
-    if subcmd in ("status", "cancel") and len(args) >= 3:
-        # args: [subcmd, device_id, token_file]
-        token_file = args[2]
-        return ["-c", token_file, subcmd, args[1]] + args[3:]
-    elif subcmd == "print" and len(args) >= 4:
-        # args: [print, 3mf_path, device_id, token_file, --flags...]
-        token_file = args[3]
-        return ["-c", token_file, "print", args[1], args[2]] + args[4:]
-    else:
-        # Unknown shape — pass through unchanged
-        return args
-
-
 def _run_bridge_local(
     binary: str,
     args: list[str],
@@ -171,16 +140,11 @@ def _run_bridge_local(
     timeout: int = 300,
     verbose: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    """Run the bridge via a local binary.
-
-    Translates the C++-style positional arguments to the Rust bridge's
-    ``-c/--credentials`` flag format automatically.
-    """
-    translated = _translate_args_for_rust_bridge(args)
+    """Run the bridge via a local binary."""
     cmd = [binary]
     if verbose:
         cmd.append("-v")
-    cmd.extend(translated)
+    cmd.extend(args)
     log.debug("Running (local): %s", " ".join(cmd))
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
@@ -191,12 +155,9 @@ def _run_bridge_docker(
     timeout: int = 300,
     verbose: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    """Run the cloud bridge via Docker.
+    """Run the cloud bridge via Docker with bind-mount mode.
 
-    First tries bind-mount mode (``-v host:container``). If that fails because
-    the container cannot read the mounted file (common in sandboxed environments
-    where overlay filesystems break bind mounts), falls back to building a
-    temporary Docker image that ``COPY``s the input files.
+    Volume-mounts any local file paths into the container.
     """
     install_hint = (
         "Install the bridge: curl -fsSL "
@@ -219,8 +180,6 @@ def _run_bridge_docker(
         timeout=120,
     )
 
-    # Collect local file paths for potential bake fallback
-    file_args: dict[str, str] = {}  # host_path -> container_path
     cmd: list[str] = ["docker", "run", "--rm", "--platform", "linux/amd64"]
     docker_args: list[str] = []
     for arg in args:
@@ -230,7 +189,6 @@ def _run_bridge_docker(
             container_path = f"/input/{basename}"
             cmd.extend(["-v", f"{real}:{container_path}:ro"])
             docker_args.append(container_path)
-            file_args[real] = container_path
         else:
             docker_args.append(arg)
 
@@ -239,69 +197,8 @@ def _run_bridge_docker(
     if verbose:
         cmd.append("-v")
 
-    log.debug("Running (bind-mount): %s", " ".join(cmd))
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-
-    # Detect bind-mount failure (file appears as dir or unreadable in container)
-    if result.returncode != 0 and file_args and "cannot read" in result.stderr:
-        log.info("Bind-mount failed, falling back to baked Docker image")
-        return _run_bridge_baked(args, file_args, timeout=timeout, verbose=verbose)
-
-    return result
-
-
-def _run_bridge_baked(
-    args: list[str],
-    file_args: dict[str, str],
-    *,
-    timeout: int = 300,
-    verbose: bool = False,
-) -> subprocess.CompletedProcess[str]:
-    """Fallback: build a temp image with COPY instead of bind mounts."""
-    import shutil
-
-    tmpdir = Path(tempfile.mkdtemp(prefix="bambu_bridge_"))
-    try:
-        # Write Dockerfile
-        lines = [f"FROM {DOCKER_IMAGE}"]
-        for host_path, container_path in file_args.items():
-            basename = os.path.basename(host_path)
-            shutil.copy2(host_path, tmpdir / basename)
-            lines.append(f"COPY {basename} {container_path}")
-        (tmpdir / "Dockerfile").write_text("\n".join(lines) + "\n")
-
-        tag = "bambox-bridge-tmp"
-        build = subprocess.run(
-            ["docker", "build", "-t", tag, "."],
-            capture_output=True,
-            text=True,
-            cwd=str(tmpdir),
-            timeout=60,
-        )
-        if build.returncode != 0:
-            raise RuntimeError(f"Docker build failed: {build.stderr[:500]}")
-
-        # Re-build args with container paths
-        docker_args: list[str] = []
-        for arg in args:
-            real = os.path.realpath(arg) if os.path.exists(arg) else ""
-            if real in file_args:
-                docker_args.append(file_args[real])
-            else:
-                docker_args.append(arg)
-
-        cmd = ["docker", "run", "--rm", "--platform", "linux/amd64"]
-        cmd.append(tag)
-        cmd.extend(docker_args)
-        if verbose:
-            cmd.append("-v")
-
-        log.debug("Running (baked): %s", " ".join(cmd))
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        # Clean up temp image (best-effort)
-        subprocess.run(["docker", "rmi", tag], capture_output=True, timeout=10)
+    log.debug("Running (docker): %s", " ".join(cmd))
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -512,7 +409,7 @@ def query_status(
 ) -> dict:
     """Query live printer status via the bridge."""
     result = _run_bridge(
-        ["status", device_id, str(token_file.resolve())],
+        ["-c", str(token_file.resolve()), "status", device_id],
         timeout=120,
         verbose=verbose,
     )
@@ -545,7 +442,7 @@ def cancel_print(
     token_file = _write_token_json(credentials)
     try:
         result = _run_bridge(
-            ["cancel", device_id, str(token_file.resolve())],
+            ["-c", str(token_file.resolve()), "cancel", device_id],
             timeout=120,
             verbose=verbose,
         )
@@ -623,10 +520,11 @@ def _cloud_print_impl(
 ) -> dict:
     """Internal print implementation with an already-written token file."""
     args = [
+        "-c",
+        str(token_file.resolve()),
         "print",
         str(threemf_path.resolve()),
         device_id,
-        str(token_file.resolve()),
         "--project",
         project_name,
         "--timeout",
