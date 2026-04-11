@@ -59,6 +59,16 @@ def _callback(
         logging.basicConfig(level=logging.DEBUG, format="%(name)s %(message)s")
 
 
+_WARNING = (
+    "[yellow]WARNING:[/yellow] bambox is experimental. "
+    "Incorrect G-code or settings may damage your printer. Use at your own risk."
+)
+
+
+def _warn_experimental() -> None:
+    ui.err_console.print(f"  {_WARNING}")
+
+
 # ---------------------------------------------------------------------------
 # Filament parsing (pure logic — no I/O)
 # ---------------------------------------------------------------------------
@@ -501,6 +511,7 @@ def pack(
     ] = 0.4,
 ) -> None:
     """Package G-code into .gcode.3mf."""
+    _warn_experimental()
     if not gcode.exists():
         ui.error(f"{gcode} not found")
         sys.exit(1)
@@ -649,6 +660,7 @@ def repack(
     ] = None,
 ) -> None:
     """Fix up existing .gcode.3mf for Bambu Connect."""
+    _warn_experimental()
     if not threemf.exists():
         ui.error(f"{threemf} not found")
         sys.exit(1)
@@ -688,6 +700,7 @@ def validate(
     ] = None,
 ) -> None:
     """Validate a .gcode.3mf archive."""
+    _warn_experimental()
     from bambox.validate import Severity, compare_3mf, validate_3mf
 
     if not threemf.exists():
@@ -749,6 +762,7 @@ def validate(
 @app.command()
 def login() -> None:
     """Log in to Bambu Cloud and configure printers."""
+    _warn_experimental()
     import os
 
     from bambox.auth import _get_user_profile, _login
@@ -813,6 +827,7 @@ def print_cmd(
     ] = False,
 ) -> None:
     """Send a .gcode.3mf to a Bambu printer via cloud bridge."""
+    _warn_experimental()
     from bambox.bridge import cloud_print, load_credentials
 
     if not threemf.exists():
