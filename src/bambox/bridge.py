@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import tomllib
 import xml.etree.ElementTree as ET
@@ -89,7 +90,8 @@ def _write_token_json(cloud: dict[str, str], directory: Path | None = None) -> P
         d = _cache_dir()
     fd, path = tempfile.mkstemp(suffix=".json", prefix="bambu_token_", dir=str(d))
     try:
-        os.fchmod(fd, 0o600)
+        if sys.platform != "win32":
+            os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w") as f:
             json.dump(bridge_data, f)
     except BaseException:
