@@ -449,35 +449,38 @@ def _check_multi_filament(gcode: str, findings: list[Finding]) -> None:
 
     # E014: bare T commands outside M620/M621 blocks
     # Walk lines tracking whether we are inside an M620/M621 block.
-    # The first bare T command before any extrusion (G1 … E) is an initial
-    # extruder select left by rewrite_tool_changes — harmless, skip it.
-    _RE_EXTRUSION = re.compile(r"^G1\s.*E[\d.]")
+    # rewrite_tool_changes leaves the first T command (initial extruder
+    # select) as a bare line.  It always matches the last M620 block's
+    # extruder, so skip bare T commands that re-select the current tool.
     in_block = False
-    seen_extrusion = False
+    last_block_ext: int | None = None
     for line in gcode.splitlines():
         stripped = line.strip()
         if stripped.startswith(";"):
             continue
-        if not seen_extrusion and _RE_EXTRUSION.match(stripped):
-            seen_extrusion = True
-        if _RE_M620_S.match(stripped):
+        m620 = _RE_M620_S.match(stripped)
+        if m620:
             in_block = True
+            last_block_ext = int(m620.group(1))
             continue
         if _RE_M621_S.match(stripped):
             in_block = False
             continue
-        if not in_block and _RE_BARE_TOOL.match(stripped):
-            if not seen_extrusion:
-                continue  # initial extruder select, not a real tool change
-            findings.append(
-                Finding(
-                    Severity.ERROR,
-                    "E014",
-                    "Bare tool command outside M620/M621 block in multi-filament print",
-                    stripped[:120],
+        if not in_block:
+            m_tool = _RE_BARE_TOOL.match(stripped)
+            if m_tool:
+                ext = int(m_tool.group(1))
+                if ext == last_block_ext:
+                    continue  # redundant select of current extruder
+                findings.append(
+                    Finding(
+                        Severity.ERROR,
+                        "E014",
+                        "Bare tool command outside M620/M621 block in multi-filament print",
+                        stripped[:120],
+                    )
                 )
-            )
-            return  # one finding is enough
+                return  # one finding is enough
 
 
 # ---------------------------------------------------------------------------

@@ -763,17 +763,21 @@ G1 X20 Y20 E2 F600
         result = validate_3mf(path)
         assert any(f.code == "E014" for f in result.errors)
 
-    def test_initial_extruder_select_ok(self, tmp_path: Path) -> None:
-        """Bare T0 before any extrusion is an initial select, not an error."""
+    def test_redundant_extruder_select_ok(self, tmp_path: Path) -> None:
+        """Bare T0 re-selecting current extruder after M620 S0 block is harmless."""
         gcode = """\
 ; HEADER_BLOCK_START
 ; total layer number: 2
 ; HEADER_BLOCK_END
 M73 P0 R5
-T0
 M620 S0
 T0
 M621 S0
+G1 X10 Y10 E1 F600
+T0
+M620 S1
+T1
+M621 S1
 ;LAYER_CHANGE
 ;Z:0.2
 ;HEIGHT:0.2
@@ -781,9 +785,6 @@ M73 L1
 M991 S0 P1
 M73 P50 R3
 G1 X10 Y10 E1 F600
-M620 S1
-T1
-M621 S1
 ;LAYER_CHANGE
 ;Z:0.4
 ;HEIGHT:0.2
