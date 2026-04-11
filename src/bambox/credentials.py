@@ -30,11 +30,11 @@ def _cache_dir() -> Path:
         d = Path.home() / ".cache" / "bambox"
 
     try:
-        d.mkdir(parents=True, exist_ok=True)
+        d.mkdir(parents=True, exist_ok=True, mode=0o700)
         return d
     except OSError:
         fallback = Path(tempfile.gettempdir()) / "bambox"
-        fallback.mkdir(parents=True, exist_ok=True)
+        fallback.mkdir(parents=True, exist_ok=True, mode=0o700)
         log.warning("Cannot create cache dir %s — using %s", d, fallback)
         return fallback
 
@@ -104,28 +104,36 @@ def _quote_toml_key(key: str) -> str:
 def _write_credentials(data: dict) -> None:
     """Write credentials dict to TOML file with 0o600 permissions.
 
-    Manual TOML writer (tomllib is read-only, no tomli_w dependency).
+    Uses ``os.open()`` with explicit mode so the file is never world-readable,
+    even briefly.  Manual TOML writer (tomllib is read-only, no tomli_w
+    dependency).
     """
     path = _credentials_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        # Write [cloud] section
-        cloud = data.get("cloud", {})
-        if cloud:
-            f.write("[cloud]\n")
-            for key, val in cloud.items():
-                f.write(f'{key} = "{_escape_toml_value(str(val))}"\n')
-            f.write("\n")
-
-        # Write [printers.*] sections
-        for printer_name, creds in data.get("printers", {}).items():
-            f.write(f"[printers.{_quote_toml_key(printer_name)}]\n")
-            for key, val in creds.items():
-                f.write(f'{key} = "{_escape_toml_value(str(val))}"\n')
-            f.write("\n")
-
     if sys.platform != "win32":
-        path.chmod(0o600)
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            _write_credentials_toml(f, data)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            _write_credentials_toml(f, data)
+
+
+def _write_credentials_toml(f, data: dict) -> None:  # noqa: ANN001
+    """Write credentials data as TOML to an open file handle."""
+    cloud = data.get("cloud", {})
+    if cloud:
+        f.write("[cloud]\n")
+        for key, val in cloud.items():
+            f.write(f'{key} = "{_escape_toml_value(str(val))}"\n')
+        f.write("\n")
+
+    for printer_name, creds in data.get("printers", {}).items():
+        f.write(f"[printers.{_quote_toml_key(printer_name)}]\n")
+        for key, val in creds.items():
+            f.write(f'{key} = "{_escape_toml_value(str(val))}"\n')
+        f.write("\n")
 
 
 def load_cloud_credentials() -> dict[str, str] | None:
@@ -219,17 +227,23 @@ def cloud_token_json():
     }
 
     cache_dir = _cache_dir()
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", prefix="bambu_token_", dir=cache_dir, delete=False
-    )
-    try:
+    if sys.platform != "win32":
+        fd = tempfile.mkstemp(suffix=".json", prefix="bambu_token_", dir=str(cache_dir))
+        os.fchmod(fd[0], 0o600)
+        with os.fdopen(fd[0], "w") as f:
+            json.dump(bridge_data, f)
+        tmp_path = Path(fd[1])
+    else:
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", prefix="bambu_token_", dir=cache_dir, delete=False
+        )
         json.dump(bridge_data, tmp)
         tmp.close()
-        if sys.platform != "win32":
-            Path(tmp.name).chmod(0o600)
-        yield Path(tmp.name)
+        tmp_path = Path(tmp.name)
+    try:
+        yield tmp_path
     finally:
         try:
-            os.unlink(tmp.name)
+            os.unlink(tmp_path)
         except OSError:
             pass
