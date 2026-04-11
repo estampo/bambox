@@ -85,6 +85,7 @@ LABEL org.opencontainers.image.description="bambox bridge daemon — Bambu Lab p
 COPY --from=fetcher /out/lib/libbambu_networking.so /usr/lib/libbambu_networking.so
 COPY --from=fetcher /out/cert/slicer_base64.cer /tmp/bambu_agent/cert/slicer_base64.cer
 COPY --from=fetcher /lib/x86_64-linux-gnu/liblzma.so.5 /usr/lib/x86_64-linux-gnu/liblzma.so.5
+COPY --from=fetcher /lib/x86_64-linux-gnu/libz.so.1 /usr/lib/x86_64-linux-gnu/libz.so.1
 COPY --from=builder /build/target/release/bambox-bridge /usr/local/bin/bambox-bridge
 
 ENV BAMBU_LIB_PATH=/usr/lib/libbambu_networking.so

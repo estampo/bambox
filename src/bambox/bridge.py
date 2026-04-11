@@ -155,9 +155,13 @@ def _run_bridge_docker(
     timeout: int = 300,
     verbose: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    """Run the cloud bridge via Docker with bind-mount mode.
+    """Run the cloud bridge via Docker.
 
-    Volume-mounts any local file paths into the container.
+    Tries bind-mount mode first (``-v host:container``).  If the container
+    reports that a mounted file cannot be read (common in Docker-in-Docker
+    or overlay-filesystem environments where file bind-mounts appear as
+    directories), falls back to building a one-shot image that ``COPY``s the
+    files in.
     """
     install_hint = (
         "Install the bridge: curl -fsSL "
@@ -180,6 +184,8 @@ def _run_bridge_docker(
         timeout=120,
     )
 
+    # Collect local file paths for potential COPY fallback
+    file_args: dict[str, str] = {}  # host_path -> container_path
     cmd: list[str] = ["docker", "run", "--rm", "--platform", "linux/amd64"]
     docker_args: list[str] = []
     for arg in args:
@@ -189,6 +195,7 @@ def _run_bridge_docker(
             container_path = f"/input/{basename}"
             cmd.extend(["-v", f"{real}:{container_path}:ro"])
             docker_args.append(container_path)
+            file_args[real] = container_path
         else:
             docker_args.append(arg)
 
@@ -197,8 +204,64 @@ def _run_bridge_docker(
     if verbose:
         cmd.append("-v")
 
-    log.debug("Running (docker): %s", " ".join(cmd))
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    log.debug("Running (docker bind-mount): %s", " ".join(cmd))
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+    if result.returncode != 0 and file_args and "cannot read" in result.stderr:
+        log.info("Bind-mount failed, falling back to COPY-based Docker run")
+        return _run_bridge_docker_copy(args, file_args, timeout=timeout, verbose=verbose)
+
+    return result
+
+
+def _run_bridge_docker_copy(
+    args: list[str],
+    file_args: dict[str, str],
+    *,
+    timeout: int = 300,
+    verbose: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """Fallback: build a one-shot image that COPYs files instead of bind-mounting."""
+    import shutil
+
+    tmpdir = Path(tempfile.mkdtemp(prefix="bambu_bridge_"))
+    try:
+        lines = [f"FROM {DOCKER_IMAGE}"]
+        for host_path, container_path in file_args.items():
+            basename = os.path.basename(host_path)
+            shutil.copy2(host_path, tmpdir / basename)
+            lines.append(f"COPY {basename} {container_path}")
+        (tmpdir / "Dockerfile").write_text("\n".join(lines) + "\n")
+
+        tag = "bambox-bridge-tmp"
+        build = subprocess.run(
+            ["docker", "build", "-t", tag, "."],
+            capture_output=True,
+            text=True,
+            cwd=str(tmpdir),
+            timeout=60,
+        )
+        if build.returncode != 0:
+            raise RuntimeError(f"Docker build failed: {build.stderr[:500]}")
+
+        docker_args: list[str] = []
+        for arg in args:
+            real = os.path.realpath(arg) if os.path.exists(arg) else ""
+            if real in file_args:
+                docker_args.append(file_args[real])
+            else:
+                docker_args.append(arg)
+
+        cmd = ["docker", "run", "--rm", "--platform", "linux/amd64", tag]
+        cmd.extend(docker_args)
+        if verbose:
+            cmd.append("-v")
+
+        log.debug("Running (docker copy): %s", " ".join(cmd))
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        subprocess.run(["docker", "rmi", tag], capture_output=True, timeout=10)
 
 
 # ---------------------------------------------------------------------------
