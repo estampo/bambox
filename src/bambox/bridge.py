@@ -69,6 +69,9 @@ def load_credentials(path: Path | None = None) -> dict[str, str]:
 def _write_token_json(cloud: dict[str, str], directory: Path | None = None) -> Path:
     """Write a temp JSON token file for the bridge binary.
 
+    Uses ``mkstemp`` + ``fchmod`` so the file is created with 0o600 from the
+    start, avoiding any window where credentials are world-readable.
+
     Returns the path (caller must clean up).
     """
     bridge_data = {
@@ -84,13 +87,16 @@ def _write_token_json(cloud: dict[str, str], directory: Path | None = None) -> P
         from bambox.credentials import _cache_dir
 
         d = _cache_dir()
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", prefix="bambu_token_", dir=d, delete=False
-    )
-    json.dump(bridge_data, tmp)
-    tmp.close()
-    Path(tmp.name).chmod(0o600)
-    return Path(tmp.name)
+    fd, path = tempfile.mkstemp(suffix=".json", prefix="bambu_token_", dir=str(d))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(bridge_data, f)
+    except BaseException:
+        os.close(fd)
+        os.unlink(path)
+        raise
+    return Path(path)
 
 
 # ---------------------------------------------------------------------------
