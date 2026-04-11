@@ -891,6 +891,7 @@ class TestStatusWatchArgs:
         with (
             patch("bambox.bridge.load_credentials", return_value=creds),
             patch("bambox.bridge._write_token_json", return_value=token),
+            patch("bambox.bridge._ensure_daemon", return_value=False),
             patch("bambox.bridge.query_status", return_value=status),
             patch("bambox.bridge.parse_ams_trays", return_value=[]),
             patch("time.sleep", side_effect=KeyboardInterrupt) as mock_sleep,
@@ -906,6 +907,7 @@ class TestStatusWatchArgs:
         with (
             patch("bambox.bridge.load_credentials", return_value=creds),
             patch("bambox.bridge._write_token_json", return_value=token),
+            patch("bambox.bridge._ensure_daemon", return_value=False),
             patch("bambox.bridge.query_status", return_value=status),
             patch("bambox.bridge.parse_ams_trays", return_value=[]),
             patch("time.sleep", side_effect=KeyboardInterrupt),
