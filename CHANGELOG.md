@@ -5,6 +5,29 @@ This changelog is managed by [towncrier](https://towncrier.readthedocs.io/).
 
 <!-- towncrier release notes start -->
 
+## 0.3.5 — 2026-04-11
+
+### Features
+
+- Bring ``bambox status`` display to parity with estampo TUI: rounded temperatures, color swatches, print stages, and active tray indicator ([#131](https://github.com/estampo/bambox/pull/131))
+- Add ``bambox cancel`` command to stop the current print on a Bambu printer
+- Migrate CLI from argparse to Typer + Rich for consistent TUI rendering with estampo, including shell completion support
+
+### Bugfixes
+
+- Bridge binary now checks ``~/.config/bambox/`` for credentials (preferred over legacy ``~/.config/estampo/``)
+- Fix E014 false positive on initial extruder select and W013 false positive on BBL ``-1`` disabled sentinel
+- Fix E014 false positive on redundant extruder re-select after M620/M621 block
+- Fix release pipeline false-positive tag detection when a pre-release tag exists (e.g. v0.3.0rc1 blocked v0.3.0)
+- Include ``install.sh`` in GitHub release assets so the bridge install command works
+
+### Misc
+
+- Add CuraEngine + P1S AMS usage guide
+- Fix PyPI badges in README pointing to wrong package name
+- Update README: add experimental warning, bridge install instructions, platform support table, remove bambu-cloud references
+
+
 ## 0.3.0 — 2026-04-10
 
 ### Bugfixes
