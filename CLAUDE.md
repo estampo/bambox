@@ -62,8 +62,6 @@ Cloud printing goes through the Rust `bambox-bridge` binary that wraps `libbambu
 
 The bridge implements `status`, `print`, `cancel`, `watch`, and `daemon` subcommands. Credentials are passed via the global `-c/--credentials` flag. `_find_local_bridge()` in `bridge.py` picks it up when installed locally; Docker bind-mount mode is used as a fallback.
 
-The Python side (`bridge.py`) still builds args in the legacy C++ positional format internally, then `_translate_args_for_rust_bridge()` converts them to the Rust `-c` flag format before execution. This translation layer exists in both the local and Docker code paths.
-
 **Decision record:** `docs/decisions/002-rust-bridge-replaces-cpp.md`.
 
 ### Bambu Connect Compatibility

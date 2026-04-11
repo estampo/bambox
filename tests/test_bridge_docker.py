@@ -20,14 +20,14 @@ class TestRunBridgeDocker:
         """FileNotFoundError from 'docker info' should raise with install hint."""
         with patch("bambox.bridge.subprocess.run", side_effect=FileNotFoundError):
             with pytest.raises(RuntimeError, match="Docker is not installed"):
-                _run_bridge_docker(["status", "DEV1", "/tmp/token.json"])
+                _run_bridge_docker(["-c", "/tmp/token.json", "status", "DEV1"])
 
     def test_docker_not_running(self):
         """Non-zero 'docker info' should raise with install hint."""
         with patch("bambox.bridge.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess([], 1, "", "error")
             with pytest.raises(RuntimeError, match="Docker is not running"):
-                _run_bridge_docker(["status", "DEV1", "/tmp/token.json"])
+                _run_bridge_docker(["-c", "/tmp/token.json", "status", "DEV1"])
 
     def test_bind_mount_basic_args(self):
         """Non-file args should be passed through without -v mounts."""
@@ -38,7 +38,7 @@ class TestRunBridgeDocker:
                 subprocess.CompletedProcess([], 0, "", ""),
                 subprocess.CompletedProcess([], 0, '{"result":"ok"}', ""),
             ]
-            result = _run_bridge_docker(["status", "DEV1", "/tmp/token.json"])
+            result = _run_bridge_docker(["-c", "/tmp/token.json", "status", "DEV1"])
 
             docker_run_call = mock_run.call_args_list[2]
             cmd = docker_run_call[0][0]
@@ -49,19 +49,18 @@ class TestRunBridgeDocker:
             assert DOCKER_IMAGE in cmd
             assert result.returncode == 0
 
-    def test_args_translated_to_rust_format(self):
-        """C++ positional args should be translated to Rust -c flag format."""
+    def test_args_passed_through(self):
+        """Args in Rust format should be passed through to the container."""
         with patch("bambox.bridge.subprocess.run") as mock_run:
             mock_run.side_effect = [
                 subprocess.CompletedProcess([], 0, "", ""),  # docker info
                 subprocess.CompletedProcess([], 0, "", ""),  # docker pull
                 subprocess.CompletedProcess([], 0, '{"result":"ok"}', ""),  # docker run
             ]
-            _run_bridge_docker(["status", "DEV1", "/tmp/token.json"])
+            _run_bridge_docker(["-c", "/tmp/token.json", "status", "DEV1"])
 
             docker_run_call = mock_run.call_args_list[2]
             cmd = docker_run_call[0][0]
-            # After translation: -c /tmp/token.json status DEV1
             image_idx = cmd.index(DOCKER_IMAGE)
             bridge_args = cmd[image_idx + 1 :]
             assert bridge_args[0] == "-c"
@@ -82,7 +81,7 @@ class TestRunBridgeDocker:
                 subprocess.CompletedProcess([], 0, "", ""),  # docker pull
                 subprocess.CompletedProcess([], 0, '{"result":"ok"}', ""),  # docker run
             ]
-            _run_bridge_docker(["print", str(test_file), "DEV1", str(token_file)])
+            _run_bridge_docker(["-c", str(token_file), "print", str(test_file), "DEV1"])
 
             docker_run_call = mock_run.call_args_list[2]
             cmd = docker_run_call[0][0]

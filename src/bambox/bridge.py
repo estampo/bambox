@@ -133,36 +133,6 @@ def _run_bridge(
     return _run_bridge_docker(args, timeout=timeout, verbose=verbose)
 
 
-def _translate_args_for_rust_bridge(args: list[str]) -> list[str]:
-    """Translate C++ bridge positional args to Rust bridge CLI shape.
-
-    The C++ bridge uses positional token files:
-      status <device_id> <token_file>
-      cancel <device_id> <token_file>
-      print <3mf> <device_id> <token_file> [--flags...]
-
-    The Rust bridge uses ``-c <token_file>`` as a global flag:
-      -c <token_file> status <device_id>
-      -c <token_file> cancel <device_id>
-      -c <token_file> print <3mf> <device_id> [--flags...]
-    """
-    if not args:
-        return args
-
-    subcmd = args[0]
-    if subcmd in ("status", "cancel") and len(args) >= 3:
-        # args: [subcmd, device_id, token_file]
-        token_file = args[2]
-        return ["-c", token_file, subcmd, args[1]] + args[3:]
-    elif subcmd == "print" and len(args) >= 4:
-        # args: [print, 3mf_path, device_id, token_file, --flags...]
-        token_file = args[3]
-        return ["-c", token_file, "print", args[1], args[2]] + args[4:]
-    else:
-        # Unknown shape — pass through unchanged
-        return args
-
-
 def _run_bridge_local(
     binary: str,
     args: list[str],
@@ -170,16 +140,11 @@ def _run_bridge_local(
     timeout: int = 300,
     verbose: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    """Run the bridge via a local binary.
-
-    Translates the C++-style positional arguments to the Rust bridge's
-    ``-c/--credentials`` flag format automatically.
-    """
-    translated = _translate_args_for_rust_bridge(args)
+    """Run the bridge via a local binary."""
     cmd = [binary]
     if verbose:
         cmd.append("-v")
-    cmd.extend(translated)
+    cmd.extend(args)
     log.debug("Running (local): %s", " ".join(cmd))
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
@@ -192,9 +157,7 @@ def _run_bridge_docker(
 ) -> subprocess.CompletedProcess[str]:
     """Run the cloud bridge via Docker with bind-mount mode.
 
-    Translates the C++-style positional arguments to the Rust bridge's
-    ``-c/--credentials`` flag format automatically, then volume-mounts
-    any local file paths into the container.
+    Volume-mounts any local file paths into the container.
     """
     install_hint = (
         "Install the bridge: curl -fsSL "
@@ -217,12 +180,9 @@ def _run_bridge_docker(
         timeout=120,
     )
 
-    # Translate C++ positional args to Rust -c flag format
-    translated = _translate_args_for_rust_bridge(args)
-
     cmd: list[str] = ["docker", "run", "--rm", "--platform", "linux/amd64"]
     docker_args: list[str] = []
-    for arg in translated:
+    for arg in args:
         if os.path.exists(arg):
             real = os.path.realpath(arg)
             basename = os.path.basename(real)
@@ -449,7 +409,7 @@ def query_status(
 ) -> dict:
     """Query live printer status via the bridge."""
     result = _run_bridge(
-        ["status", device_id, str(token_file.resolve())],
+        ["-c", str(token_file.resolve()), "status", device_id],
         timeout=120,
         verbose=verbose,
     )
@@ -482,7 +442,7 @@ def cancel_print(
     token_file = _write_token_json(credentials)
     try:
         result = _run_bridge(
-            ["cancel", device_id, str(token_file.resolve())],
+            ["-c", str(token_file.resolve()), "cancel", device_id],
             timeout=120,
             verbose=verbose,
         )
@@ -560,10 +520,11 @@ def _cloud_print_impl(
 ) -> dict:
     """Internal print implementation with an already-written token file."""
     args = [
+        "-c",
+        str(token_file.resolve()),
         "print",
         str(threemf_path.resolve()),
         device_id,
-        str(token_file.resolve()),
         "--project",
         project_name,
         "--timeout",
