@@ -4,6 +4,7 @@ import json
 import logging
 import sys
 import time
+from collections.abc import Callable
 from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Annotated, Optional
@@ -1013,16 +1014,7 @@ def status(
     token_file = _write_token_json(creds)
     try:
         if watch:
-            try:
-                while True:
-                    ui.console.clear()
-                    _print_header()
-                    st = query_status(device_id, token_file, verbose=_verbose)
-                    trays = parse_ams_trays(st)
-                    ui.console.print(_format_status(st, ams_trays=trays))
-                    time.sleep(interval)
-            except KeyboardInterrupt:
-                ui.console.print()
+            _status_watch(device_id, token_file, interval, _print_header, _verbose)
         else:
             _print_header()
             st = query_status(device_id, token_file, verbose=_verbose)
@@ -1033,6 +1025,48 @@ def status(
             token_file.unlink()
         except OSError:
             pass
+
+
+def _status_watch(
+    device_id: str,
+    token_file: Path,
+    interval: int,
+    print_header: Callable,
+    verbose: bool,
+) -> None:
+    """Watch mode: poll status and refresh display in-place (no screen clear)."""
+    from datetime import datetime, timezone
+
+    from bambox.bridge import parse_ams_trays, query_status
+
+    last_lines = 0
+    try:
+        while True:
+            try:
+                st = query_status(device_id, token_file, verbose=verbose)
+                trays = parse_ams_trays(st)
+            except Exception as e:
+                ui.error(f"Query failed: {e}")
+                time.sleep(interval)
+                continue
+
+            # Move cursor up to overwrite previous output
+            if last_lines > 0:
+                ui.console.print(f"\033[{last_lines}A\033[J", end="")
+
+            print_header()
+            output = _format_status(st, ams_trays=trays)
+            now = datetime.now(tz=timezone.utc).astimezone()
+            timestamp = now.strftime("%H:%M:%S")
+            output += f"\n  [dim]Updated {timestamp}  (Ctrl-C to exit)[/dim]"
+            ui.console.print(output)
+
+            # Count lines for next overwrite (+1 for the header)
+            last_lines = output.count("\n") + 2
+
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        ui.console.print()
 
 
 # ---------------------------------------------------------------------------
