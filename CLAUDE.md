@@ -37,7 +37,7 @@ Each module has a defined scope. Do not add logic to the wrong module — even i
 |--------|------|-----------------|
 | `pack.py` | Core .gcode.3mf archive construction, XML metadata, MD5 checksums, Bambu Connect fixup | Settings generation, slicer logic, printer communication |
 | `settings.py` | 544-key project_settings builder, profile loading, filament overlay, array broadcasting | G-code generation, archive packing, printer logic |
-| `bridge.py` | Cloud printing via Docker bridge, credential loading, AMS tray mapping, printer status | Archive construction, settings generation, slicer invocation |
+| `bridge.py` | Cloud printing via the bridge (Rust `bambox-bridge` local binary or Docker image), credential loading, AMS tray mapping, printer status. **Currently straddles legacy C++ `estampo/cloud-bridge` image and the new Rust `bambox-bridge` — see ADR-002. Do not add logic that entrenches the C++ path.** | Archive construction, settings generation, slicer invocation |
 | `cli.py` | Typer commands (pack, print, status), argument parsing, user-facing output | Business logic — delegate to pack/bridge/settings |
 | `cura.py` | CuraEngine Docker invocation, profile conversion, start/end G-code injection | OrcaSlicer logic, archive packing, printer communication |
 | `templates.py` | OrcaSlicer→Jinja2 syntax conversion, template rendering | G-code generation, settings logic |
@@ -56,10 +56,22 @@ Bambu printers require a `project_settings.config` with ~544 keys in the .gcode.
 
 Do NOT modify `fixup_project_settings()` without understanding the array padding and key fixup logic — it ensures Bambu Connect firmware acceptance.
 
-### Docker Bridge Pattern
-Cloud printing wraps `estampo/cloud-bridge:bambu-*` Docker image. Two modes:
+### Bridge Architecture (migration in progress — see ADR-002)
+
+Cloud printing goes through a "bridge" binary that wraps `libbambu_networking.so`. There are **two bridges in the tree** and the codebase is mid-migration between them:
+
+1. **Rust `bambox-bridge`** (target) — source in `bridge/`, Docker image `bambox/bridge` built from `bridge/Dockerfile`. Implements `status`, `watch`, `daemon` subcommands; credentials via global `-c/--credentials` flag. `_find_local_bridge()` picks it up when installed locally.
+2. **Legacy C++ `estampo/cloud-bridge:bambu-*`** (deprecated) — still referenced in `bridge.py` as the Docker fallback. Positional `status <device> <token>` / `print` / `cancel` CLI. Will be removed once the Rust bridge reaches parity.
+
+The two bridges are **not CLI-compatible**. Do not assume args that work against one will work against the other. When touching `bridge.py`, route subcommands explicitly based on which bridge is being invoked.
+
+Docker invocation currently supports two modes for the legacy image:
 1. **Bind-mount** (primary) — mounts .gcode.3mf via `-v`
 2. **Baked fallback** — for sandboxed/DinD environments, builds temp image with COPY
+
+Both fallback modes exist because of the C++ bridge. The Rust bridge's HTTP daemon API is designed to eliminate them — do not extend these code paths; drive the migration forward instead.
+
+**Full migration plan:** `docs/bridge-migration-plan.md`. **Decision record:** `docs/decisions/002-rust-bridge-replaces-cpp.md`.
 
 ### Bambu Connect Compatibility
 The archive format is validated by printer firmware. Key constraints:
@@ -70,7 +82,7 @@ The archive format is validated by printer firmware. Key constraints:
 ## What bambox is NOT
 
 - **Not a slicer.** It packages G-code produced by slicers. The CuraEngine integration in `cura.py` invokes an external engine — it does not implement slicing.
-- **Not a printer API client.** It wraps the Docker bridge for cloud printing. The actual protocol implementation lives in the bridge binary (C++ today, Rust planned).
+- **Not a printer API client.** It wraps the bridge binary for cloud printing. The actual protocol implementation lives in `bridge/` (Rust, calling `libbambu_networking.so` via FFI). The legacy C++ bridge is being phased out — see ADR-002.
 - **Not estampo.** estampo is the pipeline orchestrator. bambox is the Bambu Lab packaging library that estampo depends on. Do not add pipeline, DAG, or orchestration logic here.
 - **Not a profile editor.** It loads and overlays profiles. Do not build profile editing or merging UI.
 
@@ -81,4 +93,4 @@ bambox is one piece of a three-project architecture:
 - **bambox** — BBL .gcode.3mf packaging + G-code templates + settings generation
 - **bambu-cloud** (planned) — printer communication
 
-Per estampo ADR-005, bambox will absorb printer code from estampo at v0.4.0. See `docs/bridge-migration-plan.md` for the Rust bridge migration plan.
+Per estampo ADR-005, bambox will absorb printer code from estampo at v0.4.0. See `docs/bridge-migration-plan.md` for the full Rust bridge migration plan and `docs/decisions/002-rust-bridge-replaces-cpp.md` for the decision record.
