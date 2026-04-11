@@ -1,0 +1,1 @@
+``bambox status -w`` now auto-starts the Rust daemon for fast polling via HTTP instead of spawning a new bridge process per refresh. The daemon keeps MQTT subscriptions alive and updates its cache every ~1s from printer push messages, so subsequent queries are always instant.

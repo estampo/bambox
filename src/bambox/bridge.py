@@ -468,6 +468,76 @@ def _patch_config_3mf_colors(
 
 
 # ---------------------------------------------------------------------------
+# Daemon client — auto-start and query via HTTP
+# ---------------------------------------------------------------------------
+
+DAEMON_URL = "http://127.0.0.1:8765"
+
+
+def _daemon_ping() -> bool:
+    """Return True if a bridge daemon is responding on localhost:8765."""
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(f"{DAEMON_URL}/ping", method="GET")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def _start_daemon(token_file: Path, *, verbose: bool = False) -> bool:
+    """Start the bridge daemon in the background.  Returns True if started."""
+    binary = _find_local_bridge()
+    if not binary:
+        return False
+
+    cmd = [binary]
+    if verbose:
+        cmd.append("-v")
+    cmd.extend(["-c", str(token_file.resolve()), "daemon", "--port", "8765"])
+    log.debug("Starting daemon: %s", " ".join(cmd))
+    subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    # Wait for it to become responsive
+    import time
+
+    for _ in range(30):
+        time.sleep(0.5)
+        if _daemon_ping():
+            return True
+    log.warning("Daemon started but not responding after 15s")
+    return False
+
+
+def _ensure_daemon(token_file: Path, *, verbose: bool = False) -> bool:
+    """Ensure a daemon is running.  Returns True if available."""
+    if _daemon_ping():
+        return True
+    log.info("No daemon running, starting one...")
+    return _start_daemon(token_file, verbose=verbose)
+
+
+def query_status_daemon(device_id: str) -> dict:
+    """Query printer status via the HTTP daemon (fast, uses cached MQTT data)."""
+    import urllib.request
+
+    url = f"{DAEMON_URL}/status/{device_id}"
+    req = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+            return data.get("print", data)
+    except Exception as e:
+        raise RuntimeError(f"Daemon query failed: {e}") from e
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 

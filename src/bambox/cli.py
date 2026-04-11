@@ -991,8 +991,9 @@ def status(
         bool, typer.Option("-w", "--watch", help="Continuously refresh status display")
     ] = False,
     interval: Annotated[
-        int, typer.Option("-i", "--interval", help="Seconds between refreshes in watch mode")
-    ] = 10,
+        int,
+        typer.Option("-i", "--interval", help="Poll-mode refresh interval (daemon uses 1s)"),
+    ] = 5,
 ) -> None:
     """Query printer status."""
     from bambox.bridge import _write_token_json, load_credentials, parse_ams_trays, query_status
@@ -1034,18 +1035,36 @@ def _status_watch(
     print_header: Callable,
     verbose: bool,
 ) -> None:
-    """Watch mode: poll status and refresh display in-place (no screen clear)."""
+    """Watch mode: use daemon for fast polling, refresh display in-place."""
     from datetime import datetime, timezone
 
-    from bambox.bridge import parse_ams_trays, query_status
+    from bambox.bridge import (
+        _ensure_daemon,
+        parse_ams_trays,
+        query_status,
+        query_status_daemon,
+    )
+
+    use_daemon = _ensure_daemon(token_file, verbose=verbose)
+    if use_daemon:
+        ui.console.print("[dim]Connected via daemon (fast mode)[/dim]")
+    else:
+        ui.console.print("[dim]Daemon not available, using poll mode[/dim]")
 
     last_lines = 0
     try:
         while True:
             try:
-                st = query_status(device_id, token_file, verbose=verbose)
+                if use_daemon:
+                    st = query_status_daemon(device_id)
+                else:
+                    st = query_status(device_id, token_file, verbose=verbose)
                 trays = parse_ams_trays(st)
             except Exception as e:
+                if use_daemon:
+                    # Daemon may have died — fall back to poll
+                    use_daemon = False
+                    continue
                 ui.error(f"Query failed: {e}")
                 time.sleep(interval)
                 continue
@@ -1058,13 +1077,15 @@ def _status_watch(
             output = _format_status(st, ams_trays=trays)
             now = datetime.now(tz=timezone.utc).astimezone()
             timestamp = now.strftime("%H:%M:%S")
-            output += f"\n  [dim]Updated {timestamp}  (Ctrl-C to exit)[/dim]"
+            mode = "daemon" if use_daemon else "poll"
+            output += f"\n  [dim]Updated {timestamp} [{mode}]  (Ctrl-C to exit)[/dim]"
             ui.console.print(output)
 
             # Count lines for next overwrite (+1 for the header)
             last_lines = output.count("\n") + 2
 
-            time.sleep(interval)
+            # Daemon cache refreshes every ~1s; poll mode is expensive (process per call)
+            time.sleep(1 if use_daemon else interval)
     except KeyboardInterrupt:
         ui.console.print()
 
