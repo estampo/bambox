@@ -991,8 +991,9 @@ def status(
         bool, typer.Option("-w", "--watch", help="Continuously refresh status display")
     ] = False,
     interval: Annotated[
-        int, typer.Option("-i", "--interval", help="Seconds between refreshes in watch mode")
-    ] = 10,
+        int,
+        typer.Option("-i", "--interval", help="Poll-mode refresh interval (daemon uses 1s)"),
+    ] = 5,
 ) -> None:
     """Query printer status."""
     from bambox.bridge import _write_token_json, load_credentials, parse_ams_trays, query_status
@@ -1083,7 +1084,8 @@ def _status_watch(
             # Count lines for next overwrite (+1 for the header)
             last_lines = output.count("\n") + 2
 
-            time.sleep(interval)
+            # Daemon cache refreshes every ~1s; poll mode is expensive (process per call)
+            time.sleep(1 if use_daemon else interval)
     except KeyboardInterrupt:
         ui.console.print()
 
