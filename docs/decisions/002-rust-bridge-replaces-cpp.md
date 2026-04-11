@@ -3,7 +3,7 @@
 **Status:** Accepted (migration in progress)
 **Date:** 2026-04-11
 **Supersedes:** `docs/daemon-bridge-design.md` (Python-HTTP-over-C++ design)
-**Tracking issue:** TBD
+**Tracking issue:** estampo/bambox#143
 
 ## Context
 
