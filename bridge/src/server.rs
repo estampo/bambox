@@ -315,6 +315,13 @@ async fn cancel_print(
     // Set the atomic cancel flag so any in-flight upload aborts immediately
     let _ = state.handle.cancel_print().await;
 
+    // Ensure the device is selected/subscribed — the SDK requires this
+    // before send_message will work (returns -2 otherwise).
+    let _ = state
+        .handle
+        .subscribe_and_pushall(device_id.clone(), std::time::Duration::from_secs(10))
+        .await;
+
     // Send the MQTT stop command matching BambuStudio's command_task_abort()
     let stop_cmd = r#"{"print":{"command":"stop","param":"","sequence_id":"0"}}"#;
     let ret = state
