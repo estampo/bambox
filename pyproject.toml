@@ -56,7 +56,7 @@ select = ["E", "F", "I", "W"]
 "src/bambox/pack.py" = ["E501"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 markers = [
     "e2e: end-to-end tests requiring estampo CLI and Docker (deselect with '-m not e2e')",
 ]
