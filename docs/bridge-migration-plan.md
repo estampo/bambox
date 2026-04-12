@@ -131,7 +131,7 @@ over HTTP instead of stdin/stdout.
   Eliminates bind-mount issues in DinD, sandboxed, and remote environments.
 - **MQTT persists across requests.** Status returns cached data, no 20s wait.
 - **Credentials at startup.** Token JSON passed once via `--credentials` flag
-  or `BAMBU_CREDENTIALS` env var.
+  or `BAMBOX_CREDENTIALS` env var.
 - **Localhost only.** Binds to `127.0.0.1:8765`. No auth needed.
 
 ### Dependencies
@@ -245,7 +245,7 @@ Users run:
 ```bash
 docker run -d --name bambu-bridge \
   -p 8765:8765 \
-  -e BAMBU_CREDENTIALS='{"token":"..."}' \
+  -e BAMBOX_CREDENTIALS='{"token":"..."}' \
   estampo/bambu-bridge:latest
 ```
 

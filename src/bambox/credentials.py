@@ -54,7 +54,9 @@ def _credentials_path() -> Path:
     2. ``ESTAMPO_CREDENTIALS`` env var (backward compat)
     3. ``~/.config/bambox/credentials.toml`` (if exists)
     4. ``~/.config/estampo/credentials.toml`` (fallback for reading)
-    5. ``~/.config/bambox/credentials.toml`` (default for new installs)
+    5. ``~/Library/Application Support/bambox/credentials.toml`` (macOS only)
+    6. ``~/Library/Application Support/estampo/credentials.toml`` (macOS only)
+    7. ``~/.config/bambox/credentials.toml`` (default for new installs)
     """
     env = os.environ.get("BAMBOX_CREDENTIALS")
     if env:
@@ -70,10 +72,18 @@ def _credentials_path() -> Path:
         bambox_path = Path.home() / ".config/bambox/credentials.toml"
         estampo_path = Path.home() / ".config/estampo/credentials.toml"
 
-    if bambox_path.exists():
-        return bambox_path
-    if estampo_path.exists():
-        return estampo_path
+    candidates = [bambox_path, estampo_path]
+
+    # On macOS, also check ~/Library/Application Support/ (platform-native config dir)
+    # to match the Rust bridge's search behavior via the `dirs` crate.
+    if sys.platform == "darwin":
+        lib_dir = Path.home() / "Library" / "Application Support"
+        candidates.append(lib_dir / "bambox" / "credentials.toml")
+        candidates.append(lib_dir / "estampo" / "credentials.toml")
+
+    for path in candidates:
+        if path.exists():
+            return path
     # Default for new installs
     return bambox_path
 
