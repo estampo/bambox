@@ -310,7 +310,27 @@ impl BambuAgent {
         Ok(())
     }
 
+    /// Generate a stable UUID device ID from the machine hostname.
+    /// This mimics BambuStudio's slicer_uuid — a persistent identifier
+    /// that the cloud API requires for request signing.
+    fn stable_device_id() -> String {
+        // Use UUID v5 (SHA-1) with the DNS namespace and hostname
+        // to produce a deterministic, stable ID per machine.
+        let host = hostname::get()
+            .map(|h| h.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| "bambox-unknown".into());
+        uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, host.as_bytes()).to_string()
+    }
+
     fn set_http_headers(&self) -> Result<(), String> {
+        let os_type = if cfg!(target_os = "macos") {
+            "macos"
+        } else if cfg!(target_os = "windows") {
+            "windows"
+        } else {
+            "linux"
+        };
+
         let keys_owned: Vec<CString> = [
             "X-BBL-Client-Type",
             "X-BBL-Client-Name",
@@ -324,18 +344,22 @@ impl BambuAgent {
         .map(|s| CString::new(*s).expect("literal contains no NUL"))
         .collect();
 
-        let vals_owned: Vec<CString> = [
-            "slicer",
-            "BambuStudio",
-            "02.05.01.52",
-            "linux",
-            "6.8.0",
-            "estampo-headless-001",
-            "en",
-        ]
-        .iter()
-        .map(|s| CString::new(*s).expect("literal contains no NUL"))
-        .collect();
+        let device_id = Self::stable_device_id();
+        tracing::debug!(device_id = %device_id, os_type, "setting X-BBL HTTP headers");
+
+        let vals_raw: Vec<String> = vec![
+            "slicer".into(),
+            "BambuStudio".into(),
+            "02.05.00.66".into(),
+            os_type.into(),
+            "6.8.0".into(),
+            device_id,
+            "en".into(),
+        ];
+        let vals_owned: Vec<CString> = vals_raw
+            .iter()
+            .map(|s| CString::new(s.as_str()).expect("no NUL in header value"))
+            .collect();
 
         let keys: Vec<*const c_char> = keys_owned.iter().map(|s| s.as_ptr()).collect();
         let vals: Vec<*const c_char> = vals_owned.iter().map(|s| s.as_ptr()).collect();
