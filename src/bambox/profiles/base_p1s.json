@@ -1624,5 +1624,14 @@
   "z_hop_types": [
     "Auto Lift",
     "Auto Lift"
-  ]
+  ],
+  "toolchange_x_after": "100",
+  "toolchange_y_after": "100",
+  "toolchange_z_offset": "2.0",
+  "toolchange_travel_1_x": "20",
+  "toolchange_travel_1_y": "50",
+  "toolchange_travel_2_x": "60",
+  "toolchange_travel_2_y": "245",
+  "toolchange_travel_3_x": "70",
+  "toolchange_travel_3_y": "265"
 }
