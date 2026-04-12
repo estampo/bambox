@@ -414,17 +414,16 @@ def rewrite_tool_changes(
             "default_acceleration": _int("default_acceleration", 0, 10000),
             "initial_layer_acceleration": _int("initial_layer_acceleration", 0, 500),
             "initial_layer_print_height": _num("initial_layer_print_height", 0, 0.2),
-            # Fallback positions (used when next_extruder >= 255)
-            "x_after_toolchange": 100,
-            "y_after_toolchange": 100,
-            "z_after_toolchange": layer_z + 2.0,
-            # Travel points (used on second tool change)
-            "travel_point_1_x": 20,
-            "travel_point_1_y": 50,
-            "travel_point_2_x": 60,
-            "travel_point_2_y": 245,
-            "travel_point_3_x": 70,
-            "travel_point_3_y": 265,
+            # Machine geometry for toolchange travel (from machine profile)
+            "x_after_toolchange": _num("toolchange_x_after", 0, 100),
+            "y_after_toolchange": _num("toolchange_y_after", 0, 100),
+            "z_after_toolchange": layer_z + _num("toolchange_z_offset", 0, 2.0),
+            "travel_point_1_x": _num("toolchange_travel_1_x", 0, 20),
+            "travel_point_1_y": _num("toolchange_travel_1_y", 0, 50),
+            "travel_point_2_x": _num("toolchange_travel_2_x", 0, 60),
+            "travel_point_2_y": _num("toolchange_travel_2_y", 0, 245),
+            "travel_point_3_x": _num("toolchange_travel_3_x", 0, 70),
+            "travel_point_3_y": _num("toolchange_travel_3_y", 0, 265),
         }
 
         rendered = render_template(f"{machine}_toolchange.gcode.j2", ctx)
