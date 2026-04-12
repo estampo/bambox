@@ -1,0 +1,1 @@
+Fix cancel/stop command: use QoS 1 and add missing ``param`` field to match BambuStudio's MQTT protocol.

@@ -315,8 +315,8 @@ async fn cancel_print(
     // Set the atomic cancel flag so any in-flight upload aborts immediately
     let _ = state.handle.cancel_print().await;
 
-    // Also send the MQTT stop command to the printer
-    let stop_cmd = r#"{"print":{"command":"stop","sequence_id":"0"}}"#;
+    // Send the MQTT stop command matching BambuStudio's command_task_abort()
+    let stop_cmd = r#"{"print":{"command":"stop","param":"","sequence_id":"0"}}"#;
     let ret = state
         .handle
         .send_message(device_id.clone(), stop_cmd.to_string())
