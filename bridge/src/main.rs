@@ -60,7 +60,7 @@ struct Cli {
     lib_path: String,
 
     /// Path to credentials file (TOML or JSON)
-    #[arg(long, short, global = true, env = "BAMBU_CREDENTIALS")]
+    #[arg(long, short, global = true, env = "BAMBOX_CREDENTIALS")]
     credentials: Option<PathBuf>,
 
     /// Disable auto-download of the networking library
