@@ -75,7 +75,7 @@ This is all you need for `pack`, `repack`, and `validate`. For `print`,
 The `print`, `status`, and `login` commands communicate with Bambu printers
 via a cloud bridge. You have two options:
 
-**Option A — Native binary (recommended, Linux and macOS):**
+**Option A — Native binary (recommended, Linux x86_64 and macOS):**
 
 ```bash
 curl -fsSL https://github.com/estampo/bambox/releases/latest/download/install.sh | sh
@@ -83,19 +83,22 @@ curl -fsSL https://github.com/estampo/bambox/releases/latest/download/install.sh
 
 This installs `bambox-bridge` to `~/.local/bin`.
 
-**Option B — Docker (Linux, macOS, Windows):**
+**Option B — Docker (all platforms):**
 
 If you have Docker installed and running, bambox uses the
 `estampo/bambox-bridge` image automatically — no extra setup needed.
-This is the only option on Windows.
+This is the only option on Windows and Linux ARM64.
 
 ### Platform Support
 
-| Feature | Linux | macOS | Windows |
-|---------|-------|-------|---------|
-| `pack`, `repack`, `validate` | Yes | Yes | Yes |
-| `print`, `status`, `login` (native bridge) | Yes | Yes | No |
-| `print`, `status`, `login` (Docker bridge) | Yes | Yes | Yes |
+| Feature | Linux x86_64 | Linux ARM64 | macOS | Windows |
+|---------|-------------|-------------|-------|---------|
+| `pack`, `repack`, `validate` | Yes | Yes | Yes | Yes |
+| `print`, `status`, `login` (native bridge) | Yes | No¹ | Yes | No |
+| `print`, `status`, `login` (Docker bridge) | Yes | Yes² | Yes | Yes |
+
+¹ Bambu Lab does not ship a Linux ARM64 build of `libbambu_networking.so`.
+² Runs via QEMU emulation (amd64 image on ARM64 host).
 
 ## CLI
 
