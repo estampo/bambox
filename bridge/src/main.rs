@@ -495,8 +495,8 @@ async fn main() {
                 fast_exit(1);
             }
 
-            // Send the MQTT stop command
-            let stop_cmd = r#"{"print":{"command":"stop","sequence_id":"0"}}"#;
+            // Send the MQTT stop command (matches BambuStudio's command_task_abort)
+            let stop_cmd = r#"{"print":{"command":"stop","param":"","sequence_id":"0"}}"#;
             let ret = match agent.send_message(&device_id, stop_cmd) {
                 Ok(r) => r,
                 Err(e) => {

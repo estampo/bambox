@@ -503,19 +503,25 @@ impl BambuAgent {
         Ok(())
     }
 
-    /// Send an MQTT message to a device. Tries both send functions.
+    /// Send an MQTT message to a device via cloud (QoS 1).
+    ///
+    /// Uses `send_message` (cloud path) matching BambuStudio's
+    /// `cloud_publish_json`.  Falls back to `send_message_to_printer`
+    /// (LAN path) only if the cloud call fails.
     pub fn send_message(&self, device_id: &str, json: &str) -> Result<i32, String> {
         let dev = to_cstring(device_id)?;
         let msg = to_cstring(json)?;
+        // QoS 1 — BambuStudio sends all print commands at QoS 1
         let mut ret =
-            unsafe { ffi::bambu_shim_send_message(self.agent, dev.as_ptr(), msg.as_ptr(), 0) };
+            unsafe { ffi::bambu_shim_send_message(self.agent, dev.as_ptr(), msg.as_ptr(), 1) };
         if ret != 0 {
+            tracing::debug!(ret, "send_message (cloud) failed, trying send_message_to_printer");
             ret = unsafe {
                 ffi::bambu_shim_send_message_to_printer(
                     self.agent,
                     dev.as_ptr(),
                     msg.as_ptr(),
-                    0,
+                    1,
                     0,
                 )
             };
