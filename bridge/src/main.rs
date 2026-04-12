@@ -523,8 +523,52 @@ async fn main() {
             restore_stdout();
 
             let agent_handle = handle::spawn_agent_thread(agent);
-            let state = server::AppState::new(agent_handle, printers);
+            let state = server::AppState::new(agent_handle, printers.clone());
             server::spawn_cache_updater(state.clone());
+
+            // Pre-subscribe to all configured printers so the cache is warm
+            // by the time the first HTTP request arrives.
+            if !printers.is_empty() {
+                let warmup_state = state.clone();
+                tokio::spawn(async move {
+                    for (name, device_id) in &printers {
+                        tracing::info!(printer = %name, device_id = %device_id, "pre-subscribing");
+                        match warmup_state
+                            .handle
+                            .subscribe_and_pushall(device_id.clone(), Duration::from_secs(10))
+                            .await
+                        {
+                            Ok(()) => {
+                                // Drain into cache
+                                if let Ok(messages) = warmup_state.handle.drain_messages().await {
+                                    let best = messages.iter().max_by_key(|m| m.payload.len());
+                                    if let Some(msg) = best {
+                                        if let Ok(payload) =
+                                            serde_json::from_str::<serde_json::Value>(&msg.payload)
+                                        {
+                                            let mut cache = warmup_state.cache.write().unwrap();
+                                            cache.insert(
+                                                device_id.clone(),
+                                                server::DeviceStatus {
+                                                    payload,
+                                                    updated_at: std::time::Instant::now(),
+                                                },
+                                            );
+                                        }
+                                    }
+                                }
+                                let mut subs = warmup_state.subscribed_devices.write().unwrap();
+                                subs.insert(device_id.clone());
+                                tracing::info!(printer = %name, "subscribed and cached");
+                            }
+                            Err(e) => {
+                                tracing::warn!(printer = %name, error = %e, "pre-subscribe failed");
+                            }
+                        }
+                    }
+                });
+            }
+
             let app = server::router(state);
 
             let addr: SocketAddr = format!("{bind}:{port}")
