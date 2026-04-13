@@ -31,12 +31,16 @@ from bambox.bridge import (
 class TestFindLocalBridge:
     def test_finds_binary_on_path(self, tmp_path):
         """shutil.which hit should be returned."""
-        with patch("bambox.bridge.shutil.which", return_value="/usr/local/bin/bambox-bridge"):
+        with (
+            patch("bambox.bridge._IS_MACOS", False),
+            patch("bambox.bridge.shutil.which", return_value="/usr/local/bin/bambox-bridge"),
+        ):
             assert _find_local_bridge() == "/usr/local/bin/bambox-bridge"
 
     def test_finds_binary_in_local_bin(self, tmp_path):
         """Falls back to ~/.local/bin when not on PATH."""
         with (
+            patch("bambox.bridge._IS_MACOS", False),
             patch("bambox.bridge.shutil.which", return_value=None),
             patch("bambox.bridge.Path.home", return_value=tmp_path),
         ):
@@ -53,8 +57,17 @@ class TestFindLocalBridge:
         empty = tmp_path / "empty_home"
         empty.mkdir()
         with (
+            patch("bambox.bridge._IS_MACOS", False),
             patch("bambox.bridge.shutil.which", return_value=None),
             patch("bambox.bridge.Path.home", return_value=empty),
+        ):
+            assert _find_local_bridge() is None
+
+    def test_returns_none_on_macos(self):
+        """macOS always returns None (signed-app gate blocks local binary)."""
+        with (
+            patch("bambox.bridge._IS_MACOS", True),
+            patch("bambox.bridge.shutil.which", return_value="/usr/local/bin/bambox-bridge"),
         ):
             assert _find_local_bridge() is None
 
