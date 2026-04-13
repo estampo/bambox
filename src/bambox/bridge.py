@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import os
+import platform
 import shutil
 import subprocess
 import tempfile
@@ -33,6 +34,7 @@ def _xml_ns(root: ET.Element) -> str:
 
 DOCKER_IMAGE = "estampo/bambox-bridge:bambu-02.05.00.00"
 EXPECTED_API_VERSION = 1
+_IS_MACOS = platform.system() == "Darwin"
 
 # ---------------------------------------------------------------------------
 # Credentials
@@ -83,11 +85,18 @@ def _write_token_json(cloud: dict[str, str], directory: Path | None = None) -> P
 
 
 def _find_local_bridge() -> str | None:
-    """Return path to a local ``bambox-bridge`` binary, or *None*."""
+    """Return path to a local ``bambox-bridge`` binary, or *None*.
+
+    Always returns *None* on macOS — the macOS ``libbambu_networking.dylib``
+    enforces a code-signing gate that rejects unsigned host binaries for
+    print-class operations (``start_print`` returns -26).  Docker routes
+    through Linux where the ``.so`` has no such restriction.
+    """
+    if _IS_MACOS:
+        return None
     found = shutil.which("bambox-bridge")
     if found:
         return found
-    # Check common install locations
     candidates = [
         Path.home() / ".local" / "bin" / "bambox-bridge",
         Path("/usr/local/bin/bambox-bridge"),
@@ -485,7 +494,8 @@ def _check_daemon_version() -> None:
     if api_version is None:
         log.warning(
             "Bridge daemon does not report api_version — "
-            "update with: pip install -U bambox  or  docker pull %s",
+            "restart it (pkill bambox-bridge) or update with: "
+            "pip install -U bambox  or  docker pull %s",
             DOCKER_IMAGE,
         )
         return
@@ -528,10 +538,16 @@ def _start_daemon(token_file: Path, *, verbose: bool = False) -> bool:
 
 
 def _ensure_daemon(token_file: Path, *, verbose: bool = False) -> bool:
-    """Ensure a daemon is running.  Returns True if available."""
+    """Ensure a daemon is running.  Returns True if available.
+
+    On macOS, checks for an existing daemon (e.g. running via Docker)
+    but will not auto-start a local binary (blocked by signed-app gate).
+    """
     if _daemon_ping():
         _check_daemon_version()
         return True
+    if _IS_MACOS:
+        return False
     log.info("No daemon running, starting one...")
     if _start_daemon(token_file, verbose=verbose):
         _check_daemon_version()
