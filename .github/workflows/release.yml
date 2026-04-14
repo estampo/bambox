@@ -31,16 +31,38 @@ jobs:
           MSG=$(git log -1 --format=%s "$SHA")
           echo "Commit message: $MSG"
 
-          # Primary: parse branch name from merge commit message (instant, no API race)
+          # Primary: parse branch name from merge commit message.
+          # Works for true merge commits ("Merge pull request #N from owner/release/vX.Y.Z")
+          # but NOT for squash merges, whose message is just the PR title + "(#N)".
           VERSION=$(echo "$MSG" \
             | grep -oP 'release/v\K\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?' \
             | head -1 || true)
 
-          # Fallback: query the commits/pulls API
+          # Fallback 1: extract PR number from the merge message and query the PR
+          # directly. This is the path that handles squash merges, and it survives
+          # auto-delete-head-branches — unlike the commits/{sha}/pulls endpoint,
+          # which returns nothing once the head ref is gone (this is what silently
+          # broke v0.4.1; see issue #195).
           if [[ -z "$VERSION" ]]; then
-            echo "Merge message did not match — falling back to API..."
+            echo "Merge message did not contain branch name — looking for PR number..."
+            PR_NUMBER=$(echo "$MSG" | grep -oP '#\K\d+' | head -1 || true)
+            if [[ -n "$PR_NUMBER" ]]; then
+              echo "Found PR #${PR_NUMBER} — querying head ref..."
+              HEAD_REF=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" \
+                --jq '.head.ref' 2>/dev/null || true)
+              echo "PR #${PR_NUMBER} head ref: ${HEAD_REF:-<none>}"
+              VERSION=$(echo "$HEAD_REF" \
+                | grep -oP '^release/v\K\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?$' \
+                | head -1 || true)
+            fi
+          fi
+
+          # Fallback 2: query the commits/pulls API. Kept as a last resort for
+          # non-PR pushes (e.g. direct merges) where a head ref still exists.
+          if [[ -z "$VERSION" ]]; then
+            echo "PR lookup did not match — falling back to commits/pulls API..."
             BRANCHES=$(gh api "repos/${{ github.repository }}/commits/${SHA}/pulls" \
-              --jq '.[].head.ref')
+              --jq '.[].head.ref' 2>/dev/null || true)
             echo "Associated PR branches: ${BRANCHES:-<none>}"
             VERSION=$(echo "$BRANCHES" \
               | grep -oP '^release/v\K\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?$' \
