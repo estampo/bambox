@@ -309,7 +309,7 @@ Options (for `start`):
 
 ```python
 from pathlib import Path
-from bambox import pack_gcode_3mf, SliceInfo, FilamentInfo
+from bambox.pack import pack_gcode_3mf, SliceInfo, FilamentInfo
 
 gcode = Path("plate_1.gcode").read_bytes()
 

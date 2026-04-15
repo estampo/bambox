@@ -255,7 +255,7 @@ def test_pack_auto_translates_cura(tmp_path):
     """pack_gcode_3mf automatically translates CuraEngine G-code."""
     import zipfile
 
-    from bambox import pack_gcode_3mf
+    from bambox.pack import pack_gcode_3mf
 
     out = tmp_path / "test.gcode.3mf"
     pack_gcode_3mf(CURA_GCODE, out)
@@ -272,7 +272,7 @@ def test_pack_no_double_translate(tmp_path):
     """pack_gcode_3mf does not double-translate BBL G-code."""
     import zipfile
 
-    from bambox import pack_gcode_3mf
+    from bambox.pack import pack_gcode_3mf
 
     bbl_gcode = b"; HEADER_BLOCK_START\n; total layer number: 2\n; HEADER_BLOCK_END\nG28\nG1 Z0.2\n"
     out = tmp_path / "test.gcode.3mf"
