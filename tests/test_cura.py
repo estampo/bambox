@@ -176,12 +176,12 @@ class TestP1sNativeDefinition:
         assert "G1 Z0.5 F900" in end
         assert "G90" in end
 
-    def test_p1s_end_gcode_uses_safe_z_drop(self) -> None:
-        """End gcode uses fixed safe Z height for bed drop."""
+    def test_p1s_end_gcode_uses_machine_height_for_z_drop(self) -> None:
+        """End gcode uses {machine_height} variable for bed drop."""
         defn = cura_definitions_dir() / "bambox_p1s.def.json"
         data = json.loads(defn.read_text())
         end = data["overrides"]["machine_end_gcode"]["default_value"]
-        assert "G1 Z200 F600" in end
+        assert "{machine_height}" in end
 
     def test_p1s_end_gcode_has_full_sequence(self) -> None:
         """End gcode must contain the complete P1S shutdown sequence."""
