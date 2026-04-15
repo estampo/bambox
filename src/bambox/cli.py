@@ -16,7 +16,6 @@ from rich.markup import escape
 from bambox import ui
 from bambox.cura import (
     PRINTER_MODEL_IDS,
-    assemble_cura_gcode,
     extract_slice_stats,
     parse_bambox_headers,
 )
@@ -609,14 +608,6 @@ def pack(
     except ValueError as e:
         ui.error(str(e))
         sys.exit(1)
-
-    # If BAMBOX_ASSEMBLE=true, render start/end templates and wrap toolpath
-    if headers.get("ASSEMBLE") == "true":
-        gcode_bytes = assemble_cura_gcode(
-            gcode_str, project_settings, machine, filament_types, headers
-        )
-        if headers:
-            ui.info(f"Auto-configured from BAMBOX headers: {machine}, {filament_types}")
 
     pack_gcode_3mf(gcode_bytes, real_output, slice_info=info, project_settings=project_settings)
     ui.success(f"Wrote {real_output} ({real_output.stat().st_size} bytes)")

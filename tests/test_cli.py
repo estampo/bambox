@@ -241,25 +241,6 @@ class TestCmdPack:
                 main(["pack", str(gcode)])
         assert "bad machine" in capsys.readouterr().err
 
-    def test_pack_bambox_assemble(self, tmp_path: Path) -> None:
-        gcode = tmp_path / "test.gcode"
-        gcode.write_text(
-            "; BAMBOX_ASSEMBLE=true\n"
-            "; BAMBOX_PRINTER=p1s\n"
-            "; BAMBOX_FILAMENT_TYPE=PLA\n"
-            "; BAMBOX_END\n"
-            "G28\n"
-        )
-
-        with (
-            patch("bambox.cli.pack_gcode_3mf", side_effect=_touch_output_side_effect),
-            patch("bambox.cli.build_project_settings", return_value={"key": "val"}),
-            patch("bambox.assemble.assemble_gcode", return_value="assembled") as mock_asm,
-            patch("bambox.templates.render_template", return_value="rendered"),
-        ):
-            main(["pack", str(gcode)])
-            mock_asm.assert_called_once()
-
     def test_pack_nozzle_and_model_id(self, tmp_path: Path) -> None:
         gcode = tmp_path / "test.gcode"
         gcode.write_text("G28\n")
