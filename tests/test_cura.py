@@ -9,26 +9,10 @@ from pathlib import Path
 from bambox.cli import _assign_filament_slots, _parse_filament_args, main
 from bambox.cura import (
     available_cura_printers,
-    build_template_context,
     cura_definitions_dir,
     extract_slice_stats,
-    max_layer_z,
     parse_bambox_headers,
-    strip_bambox_header,
 )
-
-
-class TestMaxLayerZ:
-    def test_returns_highest_z(self) -> None:
-        gcode = "G0 Z0.3\nG1 X10 Y10 E1\nG0 Z5.0\nG1 X20 Y20 E2\nG0 Z10.0\nG1 X30 Y30 E3\n"
-        assert max_layer_z(gcode) == 10.0
-
-    def test_returns_none_for_no_z_moves(self) -> None:
-        assert max_layer_z("G1 X10 Y10 E1\n") is None
-
-    def test_handles_z_in_g1(self) -> None:
-        gcode = "G1 Z0.4 F600\nG1 Z7.2 F600\n"
-        assert max_layer_z(gcode) == 7.2
 
 
 class TestCuraDefinitions:
@@ -39,61 +23,131 @@ class TestCuraDefinitions:
 
     def test_available_printers(self) -> None:
         printers = available_cura_printers()
-        assert "bambox_p1s_ams" in printers
+        assert "bambox_p1s" in printers
 
-    def test_p1s_ams_definition_valid_json(self) -> None:
-        defn = cura_definitions_dir() / "bambox_p1s_ams.def.json"
+
+class TestP1sNativeDefinition:
+    """Tests for the native single-extruder P1S definition (no post-processing)."""
+
+    def test_p1s_definition_valid_json(self) -> None:
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
         data = json.loads(defn.read_text())
         assert data["version"] == 2
         assert data["inherits"] == "fdmprinter"
-        assert data["overrides"]["machine_extruder_count"]["value"] == 4
 
-    def test_p1s_ams_has_bambox_headers_in_start_gcode(self) -> None:
-        defn = cura_definitions_dir() / "bambox_p1s_ams.def.json"
+    def test_p1s_single_extruder(self) -> None:
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
         data = json.loads(defn.read_text())
-        start = data["overrides"]["machine_start_gcode"]["default_value"]
-        assert "; BAMBOX_PRINTER=p1s" in start
-        assert "; BAMBOX_ASSEMBLE=true" in start
+        assert data["overrides"]["machine_extruder_count"]["value"] == 1
 
-    def test_p1s_ams_has_4_extruder_trains(self) -> None:
-        defn = cura_definitions_dir() / "bambox_p1s_ams.def.json"
+    def test_p1s_has_single_extruder_train(self) -> None:
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
         data = json.loads(defn.read_text())
         trains = data["metadata"]["machine_extruder_trains"]
-        assert len(trains) == 4
-        for i in range(4):
-            assert str(i) in trains
+        assert len(trains) == 1
+        assert "0" in trains
+        assert trains["0"] == "bambox_p1s_extruder_0"
 
-    def test_extruder_definitions_exist(self) -> None:
-        d = cura_definitions_dir()
-        for i in range(4):
-            ext = d / f"bambox_p1s_ams_extruder_{i}.def.json"
-            assert ext.exists(), f"Missing extruder definition: {ext.name}"
+    def test_p1s_extruder_definition_exists(self) -> None:
+        ext = cura_definitions_dir() / "bambox_p1s_extruder_0.def.json"
+        assert ext.exists()
 
-    def test_extruders_share_nozzle(self) -> None:
-        """AMS extruders share a single nozzle (zero offset)."""
-        d = cura_definitions_dir()
-        for i in range(4):
-            ext = json.loads((d / f"bambox_p1s_ams_extruder_{i}.def.json").read_text())
-            overrides = ext["overrides"]
-            assert overrides["machine_nozzle_offset_x"]["default_value"] == 0
-            assert overrides["machine_nozzle_offset_y"]["default_value"] == 0
+    def test_p1s_extruder_valid_json(self) -> None:
+        ext = cura_definitions_dir() / "bambox_p1s_extruder_0.def.json"
+        data = json.loads(ext.read_text())
+        assert data["version"] == 2
+        assert data["metadata"]["machine"] == "bambox_p1s"
+        assert data["metadata"]["position"] == "0"
 
-    def test_p1s_ams_has_roofing_flooring_counts(self) -> None:
+    def test_p1s_start_gcode_has_full_sequence(self) -> None:
+        """Start gcode must contain the complete P1S startup sequence."""
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
+        data = json.loads(defn.read_text())
+        start = data["overrides"]["machine_start_gcode"]["default_value"]
+        # Heatbed preheat
+        assert "M140 S{material_bed_temperature_layer_0}" in start
+        assert "M190 S{material_bed_temperature_layer_0}" in start
+        # Nozzle temp
+        assert "M104 S{material_print_temperature_layer_0}" in start
+        assert "M109 S{material_print_temperature_layer_0}" in start
+        # PLA fan conditional
+        assert '{if material_type == "PLA"}' in start
+        # Bed leveling
+        assert "G29 A" in start
+        # Nozzle wipe sequence
+        assert "wipe nozzle" in start
+        # Nozzle load line
+        assert "nozzle load line" in start
+        # Textured PEI plate conditional
+        assert '{if machine_buildplate_type == "textured_pei_plate"}' in start
+        assert "G29.1 Z-0.04" in start
+
+    def test_p1s_start_gcode_no_bambox_assemble(self) -> None:
+        """Native definition must NOT have BAMBOX_ASSEMBLE — gcode is complete."""
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
+        data = json.loads(defn.read_text())
+        start = data["overrides"]["machine_start_gcode"]["default_value"]
+        assert "BAMBOX_ASSEMBLE" not in start
+
+    def test_p1s_end_gcode_no_max_layer_z(self) -> None:
+        """End gcode must not reference max_layer_z (unavailable in CuraEngine)."""
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
+        data = json.loads(defn.read_text())
+        end = data["overrides"]["machine_end_gcode"]["default_value"]
+        assert "max_layer_z" not in end
+
+    def test_p1s_end_gcode_uses_relative_z_lift(self) -> None:
+        """End gcode uses G91 relative move instead of max_layer_z for Z lift."""
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
+        data = json.loads(defn.read_text())
+        end = data["overrides"]["machine_end_gcode"]["default_value"]
+        assert "G91" in end
+        assert "G1 Z0.5 F900" in end
+        assert "G90" in end
+
+    def test_p1s_end_gcode_uses_machine_height_for_z_drop(self) -> None:
+        """End gcode uses {machine_height} variable for bed drop."""
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
+        data = json.loads(defn.read_text())
+        end = data["overrides"]["machine_end_gcode"]["default_value"]
+        assert "{machine_height}" in end
+
+    def test_p1s_end_gcode_has_full_sequence(self) -> None:
+        """End gcode must contain the complete P1S shutdown sequence."""
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
+        data = json.loads(defn.read_text())
+        end = data["overrides"]["machine_end_gcode"]["default_value"]
+        assert "M140 S0" in end  # bed off
+        assert "M104 S0" in end  # hotend off
+        assert "M106 S0" in end  # fan off
+        assert "M73 P100 R0" in end  # 100% complete signal
+        assert "G92 E0" in end  # zero extruder
+
+    def test_p1s_no_jinja2_syntax(self) -> None:
+        """Native definition must not contain Jinja2 syntax."""
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
+        text = defn.read_text()
+        assert "{{" not in text
+        assert "}}" not in text
+        assert "{%" not in text
+        assert "%}" not in text
+
+    def test_p1s_has_roofing_flooring_counts(self) -> None:
         """CuraEngine 5.12+ requires explicit roofing/flooring_layer_count."""
-        defn = cura_definitions_dir() / "bambox_p1s_ams.def.json"
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
         data = json.loads(defn.read_text())
         overrides = data["overrides"]
         assert "roofing_layer_count" in overrides
         assert "flooring_layer_count" in overrides
 
-    def test_extruders_emit_filament_headers(self) -> None:
-        """Each extruder emits BAMBOX_FILAMENT_SLOT and BAMBOX_FILAMENT_TYPE."""
-        d = cura_definitions_dir()
-        for i in range(4):
-            ext = json.loads((d / f"bambox_p1s_ams_extruder_{i}.def.json").read_text())
-            start = ext["overrides"]["machine_extruder_start_code"]["default_value"]
-            assert f"; BAMBOX_FILAMENT_SLOT={i}" in start
-            assert "; BAMBOX_FILAMENT_TYPE=" in start
+    def test_p1s_end_gcode_has_ams_unload(self) -> None:
+        """End gcode must retract filament back to AMS."""
+        defn = cura_definitions_dir() / "bambox_p1s.def.json"
+        data = json.loads(defn.read_text())
+        end = data["overrides"]["machine_end_gcode"]["default_value"]
+        assert "M620 S255" in end
+        assert "T255" in end
+        assert "M621 S255" in end
 
 
 class TestParseBamboxHeaders:
@@ -178,75 +232,6 @@ class TestParseBamboxHeaders:
         assert h["FILAMENT_TYPE"] == "PLA,PLA"
 
 
-class TestStripBamboxHeader:
-    def test_strips_header_lines(self) -> None:
-        gcode = "; BAMBOX_PRINTER=p1s\n; BAMBOX_BED_TEMP=60\n; BAMBOX_END\nG28\nG1 Z0.2 F1200\n"
-        result = strip_bambox_header(gcode)
-        assert "; BAMBOX_" not in result
-        assert "G28\n" in result
-        assert "G1 Z0.2 F1200\n" in result
-
-    def test_preserves_non_bambox_comments(self) -> None:
-        gcode = (
-            "; generated by CuraEngine\n; BAMBOX_PRINTER=p1s\n;FLAVOR:Marlin\n; BAMBOX_END\nG28\n"
-        )
-        result = strip_bambox_header(gcode)
-        assert "; generated by CuraEngine" in result
-        assert ";FLAVOR:Marlin" in result
-
-    def test_no_headers(self) -> None:
-        gcode = "G28\nG1 Z0.2\n"
-        assert strip_bambox_header(gcode) == gcode
-
-    def test_preserves_bambox_comments_after_header(self) -> None:
-        gcode = "; BAMBOX_PRINTER=p1s\n; BAMBOX_END\nG28\n; BAMBOX_MACRO=something\nG1 Z0.2\n"
-        result = strip_bambox_header(gcode)
-        assert "; BAMBOX_PRINTER" not in result
-        assert "; BAMBOX_END" not in result
-        assert "; BAMBOX_MACRO=something\n" in result
-        assert "G28\n" in result
-
-
-class TestBuildTemplateContext:
-    def test_maps_header_temps(self) -> None:
-        headers = {"BED_TEMP": "60", "NOZZLE_TEMP": "220"}
-        ctx = build_template_context(headers, {})
-        assert ctx["bed_temperature_initial_layer_single"] == 60
-        assert ctx["nozzle_temperature_initial_layer"] == [220]
-
-    def test_header_overrides_settings(self) -> None:
-        headers = {"BED_TEMP": "70"}
-        settings: dict[str, object] = {"bed_temperature_initial_layer_single": 55}
-        ctx = build_template_context(headers, settings)
-        assert ctx["bed_temperature_initial_layer_single"] == 70
-
-    def test_bed_temp_header_overrides_existing_array(self) -> None:
-        """BED_TEMP header must override pre-existing bed_temperature arrays."""
-        headers = {"BED_TEMP": "80"}
-        settings: dict[str, object] = {
-            "bed_temperature": [55],
-            "bed_temperature_initial_layer": [55],
-        }
-        ctx = build_template_context(headers, settings)
-        assert ctx["bed_temperature"] == [80]
-        assert ctx["bed_temperature_initial_layer"] == [80]
-        assert ctx["bed_temperature_initial_layer_single"] == 80
-
-    def test_nozzle_temp_header_overrides_existing_array(self) -> None:
-        """NOZZLE_TEMP header must override pre-existing nozzle_temperature_initial_layer."""
-        headers = {"NOZZLE_TEMP": "260"}
-        settings: dict[str, object] = {
-            "nozzle_temperature_initial_layer": [200],
-        }
-        ctx = build_template_context(headers, settings)
-        assert ctx["nozzle_temperature_initial_layer"] == [260]
-
-    def test_defaults_present(self) -> None:
-        ctx = build_template_context({}, {})
-        assert ctx["initial_extruder"] == 0
-        assert ctx["max_layer_z"] == 0.4
-
-
 class TestPackWithBamboxHeaders:
     def test_auto_configures_from_headers(self, tmp_path: Path) -> None:
         """pack should auto-detect machine/filament from BAMBOX headers."""
@@ -269,32 +254,6 @@ class TestPackWithBamboxHeaders:
             # Should have detected PETG-CF from headers
             assert ps["filament_type"][0] == "PETG-CF"
             assert len(ps) > 500
-
-    def test_assemble_wraps_toolpath(self, tmp_path: Path) -> None:
-        """BAMBOX_ASSEMBLE=true should render start/end and wrap toolpath."""
-        gcode_file = tmp_path / "cura_output.gcode"
-        gcode_file.write_text(
-            "; BAMBOX_PRINTER=p1s\n"
-            "; BAMBOX_FILAMENT_TYPE=PLA\n"
-            "; BAMBOX_BED_TEMP=55\n"
-            "; BAMBOX_NOZZLE_TEMP=220\n"
-            "; BAMBOX_ASSEMBLE=true\n"
-            "; BAMBOX_END\n"
-            "G1 Z0.2 F1200\nG1 X10 Y10 E1 F600\n"
-        )
-        output = tmp_path / "assembled.gcode.3mf"
-
-        main(["pack", str(gcode_file), "-o", str(output)])
-
-        with zipfile.ZipFile(output) as z:
-            gcode = z.read("Metadata/plate_1.gcode").decode()
-            # Should have P1S start sequence (from template)
-            assert "M104" in gcode  # nozzle temp command from start template
-            assert "M140" in gcode  # bed temp command from start template
-            # Original toolpath preserved
-            assert "G1 X10 Y10 E1" in gcode
-            # BAMBOX headers stripped
-            assert "; BAMBOX_PRINTER" not in gcode
 
     def test_headers_override_cli_filament(self, tmp_path: Path) -> None:
         """BAMBOX_FILAMENT_TYPE header takes precedence over --filament flag."""
@@ -332,35 +291,6 @@ class TestPackWithBamboxHeaders:
             ps = json.loads(z.read("Metadata/project_settings.config"))
             assert ps["filament_type"][0] == "PLA"
             assert ps["filament_type"][1] == "PETG-CF"
-
-    def test_multi_filament_assembly_rewrites_tool_changes(self, tmp_path: Path) -> None:
-        """Multi-filament assembly should rewrite T commands to M620/M621."""
-        gcode_file = tmp_path / "multi_tool.gcode"
-        gcode_file.write_text(
-            "; BAMBOX_PRINTER=p1s\n"
-            "; BAMBOX_FILAMENT_TYPE=PLA\n"
-            "; BAMBOX_FILAMENT_TYPE=PETG-CF\n"
-            "; BAMBOX_ASSEMBLE=true\n"
-            "; BAMBOX_BED_TEMP=60\n"
-            "; BAMBOX_NOZZLE_TEMP=220\n"
-            "; BAMBOX_END\n"
-            "G1 Z0.2 F1200\n"
-            "G1 X10 Y10 E1 F600\n"
-            "T1\n"
-            "G1 X20 Y20 E2 F600\n"
-        )
-        output = tmp_path / "multi_tool.gcode.3mf"
-
-        main(["pack", str(gcode_file), "-o", str(output)])
-
-        with zipfile.ZipFile(output) as z:
-            gcode = z.read("Metadata/plate_1.gcode").decode()
-            # T1 should be wrapped in M620/M621 sequence
-            assert "M620 S1A" in gcode
-            assert "M621 S1A" in gcode
-            # Original toolpath preserved
-            assert "G1 X10 Y10 E1" in gcode
-            assert "G1 X20 Y20 E2" in gcode
 
     def test_slot_mapping_from_cli(self, tmp_path: Path) -> None:
         """bambox pack -f 3:PETG-CF places filament in slot 3."""
