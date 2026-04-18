@@ -21,6 +21,7 @@ from bambox.validate import (
     compare_3mf,
     validate_3mf,
     validate_3mf_buffer,
+    validate_gcode,
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "e2e_cura_p1s"
@@ -916,3 +917,135 @@ class TestCLIReference:
         a = build_valid_3mf(tmp_path)
         with pytest.raises(SystemExit, match="1"):
             main(["validate", str(a), "--reference", str(tmp_path / "nope.3mf")])
+
+
+# ---------------------------------------------------------------------------
+# G-code safety validation (pre-packaging)
+# ---------------------------------------------------------------------------
+
+# A safe G-code with proper homing, layers, and end Z above max_layer_z
+_SAFE_GCODE = """\
+G28
+; HEADER_BLOCK_START
+; total layer number: 2
+; HEADER_BLOCK_END
+M73 P0 R5
+;LAYER_CHANGE
+;Z:0.2
+;HEIGHT:0.2
+M73 L1
+M991 S0 P1
+G1 X10 Y10 E1 F600
+;LAYER_CHANGE
+;Z:0.4
+;HEIGHT:0.2
+M73 L2
+M991 S0 P2
+G1 X20 Y20 E2 F600
+; end gcode
+G1 Z50
+M104 S0
+M140 S0
+"""
+
+
+class TestValidateGcode:
+    def test_safe_gcode_passes(self) -> None:
+        result = validate_gcode(_SAFE_GCODE)
+        assert result.valid
+        assert len(result.errors) == 0
+
+    def test_s001_end_z_below_max_layer_z(self) -> None:
+        gcode = """\
+G28
+;LAYER_CHANGE
+;Z:0.2
+M73 L1
+M991 S0 P1
+G1 X10 Y10 E1 F600
+;LAYER_CHANGE
+;Z:10.0
+M73 L2
+M991 S0 P2
+G1 X20 Y20 E2 F600
+G1 Z5.0
+"""
+        result = validate_gcode(gcode)
+        assert not result.valid
+        codes = [f.code for f in result.errors]
+        assert "S001" in codes
+
+    def test_s001_end_z_above_max_layer_z_ok(self) -> None:
+        gcode = """\
+G28
+;LAYER_CHANGE
+;Z:0.2
+M73 L1
+M991 S0 P1
+;LAYER_CHANGE
+;Z:10.0
+M73 L2
+M991 S0 P2
+G1 Z50.0
+"""
+        result = validate_gcode(gcode)
+        s001_errors = [f for f in result.errors if f.code == "S001"]
+        assert len(s001_errors) == 0
+
+    def test_s002_premature_heater_off_in_toolpath(self) -> None:
+        gcode = """\
+G28
+;LAYER_CHANGE
+;Z:0.2
+M73 L1
+M991 S0 P1
+M104 S0
+;LAYER_CHANGE
+;Z:0.4
+M73 L2
+M991 S0 P2
+"""
+        result = validate_gcode(gcode)
+        assert not result.valid
+        codes = [f.code for f in result.errors]
+        assert "S002" in codes
+
+    def test_s002_heater_off_in_end_section_ok(self) -> None:
+        result = validate_gcode(_SAFE_GCODE)
+        s002_errors = [f for f in result.errors if f.code == "S002"]
+        assert len(s002_errors) == 0
+
+    def test_s003_extrusion_before_homing(self) -> None:
+        gcode = """\
+G1 X10 Y10 E1 F600
+G28
+;LAYER_CHANGE
+;Z:0.2
+M73 L1
+M991 S0 P1
+"""
+        result = validate_gcode(gcode)
+        assert not result.valid
+        codes = [f.code for f in result.errors]
+        assert "S003" in codes
+
+    def test_s003_extrusion_after_homing_ok(self) -> None:
+        result = validate_gcode(_SAFE_GCODE)
+        s003_errors = [f for f in result.errors if f.code == "S003"]
+        assert len(s003_errors) == 0
+
+    def test_no_layer_data_skips_z_check(self) -> None:
+        gcode = "G28\nG1 X10 Y10 E1 F600\n"
+        result = validate_gcode(gcode)
+        s001_errors = [f for f in result.errors if f.code == "S001"]
+        assert len(s001_errors) == 0
+
+    def test_minimal_gcode_fixture_passes(self) -> None:
+        """MINIMAL_GCODE from shared fixtures should not trigger safety errors."""
+        result = validate_gcode(MINIMAL_GCODE)
+        # MINIMAL_GCODE has no G28, so S003 won't fire (no homing = nothing to check)
+        # S001/S002 should not fire either
+        s001 = [f for f in result.errors if f.code == "S001"]
+        s002 = [f for f in result.errors if f.code == "S002"]
+        assert len(s001) == 0
+        assert len(s002) == 0
