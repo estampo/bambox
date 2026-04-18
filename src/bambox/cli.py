@@ -510,6 +510,9 @@ def pack(
     nozzle_diameter: Annotated[
         float, typer.Option("--nozzle-diameter", help="Nozzle diameter in mm")
     ] = 0.4,
+    skip_safety: Annotated[
+        bool, typer.Option("--skip-safety", help="Skip pre-packaging G-code safety checks")
+    ] = False,
 ) -> None:
     """Package G-code into .gcode.3mf."""
     _warn_experimental()
@@ -608,6 +611,21 @@ def pack(
     except ValueError as e:
         ui.error(str(e))
         sys.exit(1)
+
+    if not skip_safety:
+        from bambox.validate import validate_gcode
+
+        safety_result = validate_gcode(gcode_str)
+        if not safety_result.valid:
+            for f in safety_result.findings:
+                if f.severity.value == "error":
+                    ui.error(f"[{f.code}] {f.message}")
+                    if f.detail:
+                        ui.error(f"  {f.detail}")
+            ui.error("G-code safety check failed. Use --skip-safety to override.")
+            sys.exit(1)
+        for f in safety_result.warnings:
+            ui.warn(f"[{f.code}] {f.message}")
 
     pack_gcode_3mf(gcode_bytes, real_output, slice_info=info, project_settings=project_settings)
     ui.success(f"Wrote {real_output} ({real_output.stat().st_size} bytes)")
@@ -803,6 +821,9 @@ def print_cmd(
     yes: Annotated[
         bool, typer.Option("-y", "--yes", help="Skip AMS mapping confirmation prompt")
     ] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Send even if validation finds errors")
+    ] = False,
 ) -> None:
     """Send a .gcode.3mf to a Bambu printer via cloud bridge."""
     _warn_experimental()
@@ -811,6 +832,23 @@ def print_cmd(
     if not threemf.exists():
         ui.error(f"{threemf} not found")
         sys.exit(1)
+
+    # Validate the archive before sending to the printer
+    from bambox.validate import validate_3mf
+
+    val_result = validate_3mf(threemf)
+    for f in val_result.warnings:
+        ui.warn(f"[{f.code}] {f.message}")
+    for f in val_result.errors:
+        ui.error(f"[{f.code}] {f.message}")
+        if f.detail:
+            ui.error(f"  {f.detail}")
+    if not val_result.valid:
+        if force:
+            ui.warn("Validation errors found — proceeding anyway (--force)")
+        else:
+            ui.error("Validation failed. Use --force to send anyway.")
+            sys.exit(1)
 
     creds_path = credentials
     try:

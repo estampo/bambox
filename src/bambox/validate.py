@@ -73,6 +73,15 @@ _RE_M620_S = re.compile(r"^M620 S(\d+)", re.MULTILINE)
 _RE_M621_S = re.compile(r"^M621 S(\d+)", re.MULTILINE)
 _RE_BARE_TOOL = re.compile(r"^T([0-4])\s*$", re.MULTILINE)
 
+# G-code safety regex patterns
+_RE_LAYER_CHANGE = re.compile(r"^;LAYER_CHANGE", re.MULTILINE)
+_RE_LAYER_Z = re.compile(r"^;Z:([\d.]+)", re.MULTILINE)
+_RE_G1_Z = re.compile(r"^G[01]\s+.*Z([\d.]+)", re.MULTILINE)
+_RE_G1_Z_ONLY = re.compile(r"^G[01]\s+Z([\d.]+)", re.MULTILINE)
+_RE_TEMP_ZERO = re.compile(r"^M(10[49]|1[49]0)\s+S0(?:\s|$)", re.MULTILINE)
+_RE_G28 = re.compile(r"^G28\b", re.MULTILINE)
+_RE_EXTRUSION = re.compile(r"^G[01]\s+.*E[\d.]+", re.MULTILINE)
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -175,6 +184,25 @@ def validate_3mf_buffer(buf: IO[bytes]) -> ValidationResult:
         if gcode is not None and slice_info is not None:
             _check_time_sync(gcode, slice_info, findings)
 
+    return ValidationResult(findings)
+
+
+def validate_gcode(gcode: str) -> ValidationResult:
+    """Validate assembled G-code for physically dangerous moves before packaging.
+
+    This is a pre-packaging safety check — separate from the archive-level
+    validation in ``validate_3mf``.  It catches dangerous patterns that could
+    damage the printer or cause failed prints.
+
+    Checks:
+        S001: End G-code Z move lower than ``max_layer_z`` (nozzle crash risk)
+        S002: ``M104``/``M109``/``M140`` S0 in toolpath (premature heater off)
+        S003: Extrusion before homing (``G28``)
+    """
+    findings: list[Finding] = []
+    _check_end_z_safety(gcode, findings)
+    _check_premature_heater_off(gcode, findings)
+    _check_extrusion_before_homing(gcode, findings)
     return ValidationResult(findings)
 
 
@@ -480,6 +508,111 @@ def _check_multi_filament(gcode: str, findings: list[Finding]) -> None:
                     )
                 )
                 return  # one finding is enough
+
+
+# ---------------------------------------------------------------------------
+# G-code safety checks (pre-packaging)
+# ---------------------------------------------------------------------------
+
+
+def _extract_max_layer_z(gcode: str) -> float:
+    """Find the highest Z from ;Z: layer-change comments."""
+    z_values = _RE_LAYER_Z.findall(gcode)
+    if not z_values:
+        return 0.0
+    return max(float(z) for z in z_values)
+
+
+def _find_end_gcode_start(gcode: str) -> int:
+    """Return the character offset where end G-code begins.
+
+    Heuristic: the position after the last ;LAYER_CHANGE block's content.
+    Falls back to end-of-string if no layer changes found.
+    """
+    matches = list(_RE_LAYER_CHANGE.finditer(gcode))
+    if not matches:
+        return len(gcode)
+    # End gcode starts after the last layer's moves.  We look for the last
+    # M73 L marker which signals end-of-layer, then scan forward.
+    last_m73_l = None
+    for m in _RE_M73_L.finditer(gcode):
+        last_m73_l = m
+    if last_m73_l:
+        return last_m73_l.end()
+    return matches[-1].end()
+
+
+def _check_end_z_safety(gcode: str, findings: list[Finding]) -> None:
+    """S001: End G-code Z move lower than max_layer_z (nozzle crash risk)."""
+    max_z = _extract_max_layer_z(gcode)
+    if max_z <= 0:
+        return  # can't check without layer Z data
+
+    end_start = _find_end_gcode_start(gcode)
+    end_section = gcode[end_start:]
+
+    for line in end_section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(";"):
+            continue
+        m = _RE_G1_Z_ONLY.match(stripped)
+        if m:
+            z_val = float(m.group(1))
+            if z_val < max_z:
+                findings.append(
+                    Finding(
+                        Severity.ERROR,
+                        "S001",
+                        f"End G-code moves Z to {z_val}mm, below max layer Z "
+                        f"of {max_z}mm (nozzle crash risk)",
+                        stripped[:120],
+                    )
+                )
+                return  # one finding is enough
+
+
+def _check_premature_heater_off(gcode: str, findings: list[Finding]) -> None:
+    """S002: M104/M109/M140 S0 in toolpath section (premature heater shutdown)."""
+    end_start = _find_end_gcode_start(gcode)
+    toolpath_section = gcode[:end_start]
+
+    for line in toolpath_section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(";"):
+            continue
+        if _RE_TEMP_ZERO.match(stripped):
+            findings.append(
+                Finding(
+                    Severity.ERROR,
+                    "S002",
+                    "Heater set to 0 during toolpath (premature shutdown)",
+                    stripped[:120],
+                )
+            )
+            return  # one finding is enough
+
+
+def _check_extrusion_before_homing(gcode: str, findings: list[Finding]) -> None:
+    """S003: Extrusion move (G1 with E) before any G28 homing command."""
+    homing_match = _RE_G28.search(gcode)
+    if not homing_match:
+        return  # no homing found — different problem, not our check
+
+    # Check if any extrusion happens before the first G28
+    for line in gcode[: homing_match.start()].splitlines():
+        stripped = line.strip()
+        if stripped.startswith(";"):
+            continue
+        if _RE_EXTRUSION.match(stripped):
+            findings.append(
+                Finding(
+                    Severity.ERROR,
+                    "S003",
+                    "Extrusion move before homing (G28)",
+                    stripped[:120],
+                )
+            )
+            return  # one finding is enough
 
 
 # ---------------------------------------------------------------------------
