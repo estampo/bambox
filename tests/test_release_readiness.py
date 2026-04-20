@@ -137,7 +137,44 @@ class TestCheckCodesExist:
 
 
 # ---------------------------------------------------------------------------
-# 4. Bridge version matches Python package version
+# 4. THIRD-PARTY-NOTICES ships with the wheel
+# ---------------------------------------------------------------------------
+
+
+class TestThirdPartyNoticesShipped:
+    """The profile provenance documentation must ride along in the wheel.
+
+    Users installing from PyPI have no other way to discover the OrcaSlicer /
+    BambuStudio origin of the bundled profiles and the resulting license
+    obligations. We enforce this via the hatchling ``force-include`` map
+    rather than waiting for a surprised downstream consumer.
+    """
+
+    def test_notices_file_exists_at_repo_root(self) -> None:
+        root = Path(__file__).parent.parent
+        assert (root / "THIRD-PARTY-NOTICES").exists()
+
+    def test_notices_force_included_in_wheel(self) -> None:
+        import tomllib
+
+        root = Path(__file__).parent.parent
+        with open(root / "pyproject.toml", "rb") as f:
+            cfg = tomllib.load(f)
+
+        wheel_cfg = cfg["tool"]["hatch"]["build"]["targets"]["wheel"]
+        force_include = wheel_cfg.get("force-include", {})
+        assert "THIRD-PARTY-NOTICES" in force_include, (
+            "pyproject.toml must force-include THIRD-PARTY-NOTICES in the "
+            "wheel so profile provenance ships with the package."
+        )
+        assert force_include["THIRD-PARTY-NOTICES"].startswith("bambox/"), (
+            "THIRD-PARTY-NOTICES should be placed under bambox/ in the wheel "
+            "so it's discoverable next to the installed package."
+        )
+
+
+# ---------------------------------------------------------------------------
+# 5. Bridge version matches Python package version
 # ---------------------------------------------------------------------------
 
 

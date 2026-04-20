@@ -5,6 +5,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/bambox"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"THIRD-PARTY-NOTICES" = "bambox/THIRD-PARTY-NOTICES"
+
 [project]
 name = "bambox"
 version = "0.4.4"

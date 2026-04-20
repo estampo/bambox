@@ -47,7 +47,25 @@ packaging format (metadata, checksums, settings) so that any slicer —
 CuraEngine, PrusaSlicer, KiriMoto, or a custom toolpath generator — can target
 Bambu printers.
 
-## What You Can Do
+## What bambox is — and isn't
+
+bambox is a **Bambu Lab compatibility layer**. It takes G-code from any
+slicer and produces the `.gcode.3mf` archive Bambu Lab printers require —
+with the 544-key `project_settings.config`, metadata, MD5 checksums, and
+per-filament arrays the firmware validates. It can also stream that archive
+to a printer over the Bambu Cloud bridge.
+
+**bambox is not:**
+
+- **A slicer.** Slicing happens upstream (estampo + CuraEngine/OrcaSlicer).
+  bambox packages the result — see [Where This Fits](#where-this-fits).
+- **A profile editor.** It loads and overlays bundled profiles. New printers
+  are added by dropping in `src/bambox/profiles/base_<printer>.json`; there
+  is no UI for editing profiles.
+- **A general printer-control tool.** The packaging format, metadata fixups,
+  and MQTT protocol are all Bambu-specific.
+
+What you can do today:
 
 **Pack G-code** (no extra dependencies) — build `.gcode.3mf` archives from
 any G-code source with full 544-key settings generation. Works on Linux,
@@ -133,6 +151,28 @@ native binary.
 ² macOS requires Docker — the native bridge is not supported on macOS.
 ³ Runs via QEMU emulation (amd64 image on ARM64 host).
 
+### Supported printers and filaments
+
+bambox ships bundled profiles in `src/bambox/profiles/`. `bambox pack` fails
+loudly at entry if the requested printer or filament is not in these tables,
+rather than letting the archive fail at print time.
+
+| Printer | Firmware model ID | Profile |
+|---------|-------------------|---------|
+| Bambu Lab P1S (0.4 nozzle) | `C12` | `base_p1s.json` |
+
+| Filament | Profile |
+|----------|---------|
+| PLA | `filament_pla.json` |
+| ASA | `filament_asa.json` |
+| PETG-CF | `filament_petg_cf.json` |
+
+Other Bambu printers (P1P, X1C, X1, X1E, A1, A1 Mini) have firmware model IDs
+listed in `bambox.cura.PRINTER_MODEL_IDS` but no bundled profiles yet. Adding
+one is a matter of dropping in `base_<printer>.json` — contributions welcome.
+See [Known limitations](#known-limitations) for what has actually been
+validated on hardware.
+
 ## CLI
 
 ```
@@ -164,6 +204,25 @@ Options:
 | `-f, --filament` | Filament spec: `[SLOT:]TYPE[:COLOR]` (repeatable) |
 | `--nozzle-diameter` | Nozzle diameter (default: 0.4) |
 | `--printer-model-id` | Override printer model ID |
+
+#### How packing works
+
+`.gcode.3mf` is a ZIP archive. The packing step does three things:
+
+1. **Rewrites the G-code** to meet Bambu firmware expectations (header
+   injection, layer markers, AMS tool-change rewriting).
+2. **Generates a 544-key `project_settings.config`** by layering the machine
+   base profile (`base_<printer>.json`) with per-slot filament overlays
+   (`filament_<type>.json`). The firmware validates this blob and rejects
+   archives where keys are missing, arrays are the wrong length, or the
+   embedded `printer_model_id` doesn't match.
+3. **Computes MD5 checksums and writes OPC/3MF metadata** so the archive is
+   a valid package.
+
+Because the settings blob is printer-specific, a `.gcode.3mf` packed for the
+wrong printer is not portable. bambox validates the requested printer at
+pack entry and exits with a clear error if the profile is unknown or
+malformed.
 
 ### `bambox repack` — Fix up existing archives
 
@@ -401,6 +460,16 @@ uv run ruff format --check src tests
 uv run mypy src/bambox
 uv run pytest
 ```
+
+## Credits and attribution
+
+The bundled machine and filament profiles under `src/bambox/profiles/` are
+derived from OrcaSlicer and BambuStudio slicer profiles (AGPL-3.0-era
+sources). The CuraEngine printer definitions under `src/bambox/data/cura/`
+use the CuraEngine schema (LGPL-3.0). See
+[`THIRD-PARTY-NOTICES`](THIRD-PARTY-NOTICES) for full provenance, file lists,
+and license details. The file is also shipped inside the installed package
+so it remains discoverable after `pip install`.
 
 ## License
 
