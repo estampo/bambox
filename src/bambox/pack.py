@@ -147,6 +147,23 @@ MODEL_SETTINGS_RELS_XML = """\
 </Relationships>"""
 
 # 1x1 transparent PNG (67 bytes) — minimal valid placeholder thumbnail.
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def _is_valid_thumbnail(data: bytes) -> bool:
+    """Return True if *data* is a PNG image with dimensions larger than 1×1.
+
+    Reads only the 24-byte PNG signature + IHDR chunk — no PIL required.
+    PNG spec: bytes 0-7 = magic, bytes 8-15 = IHDR length+type,
+    bytes 16-19 = width (big-endian uint32), bytes 20-23 = height.
+    """
+    if len(data) < 24 or not data.startswith(_PNG_MAGIC):
+        return False
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    return width > 1 and height > 1
+
+
 _PLACEHOLDER_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
     b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
@@ -433,8 +450,6 @@ def repack_3mf(
         filament_colors: Hex colors per filament slot.
         min_slots: Minimum slot count for per-filament arrays (default 5).
     """
-    _THUMB_MIN_SIZE = 1024
-
     with zipfile.ZipFile(path, "r") as zin:
         # --- Fix project_settings.config ---
         try:
@@ -517,8 +532,8 @@ def repack_3mf(
         for fname in thumb_files:
             try:
                 existing = zin.read(fname)
-                if len(existing) >= _THUMB_MIN_SIZE:
-                    continue  # valid thumbnail
+                if _is_valid_thumbnail(existing):
+                    continue  # valid thumbnail — keep as-is
             except KeyError:
                 pass
             # Need to generate — load G-code lazily

@@ -318,9 +318,9 @@ class TestRepack:
             assert 'key="thumbnail_file"' in ms
 
     def test_regenerates_broken_thumbnails(self, tmp_path: Path) -> None:
-        """Repack regenerates thumbnails that are too small (broken)."""
+        """Repack regenerates thumbnails that are not valid PNGs."""
         threemf = tmp_path / "test.gcode.3mf"
-        # Tiny thumbnail simulates headless OrcaSlicer output
+        # Corrupt/empty thumbnail simulates headless OrcaSlicer without Xvfb
         _make_orca_3mf(threemf, thumbnail=b"\x89PNG tiny")
 
         repack_3mf(threemf)
@@ -331,8 +331,8 @@ class TestRepack:
             assert png != b"\x89PNG tiny"
 
     def test_preserves_valid_thumbnails(self, tmp_path: Path) -> None:
-        """Repack keeps thumbnails that are large enough."""
-        valid_png = b"\x89PNG" + b"\x00" * 2000  # > 1024 bytes
+        """Repack keeps thumbnails that are valid PNGs with dimensions > 1×1."""
+        valid_png = (FIXTURES / "plate_1.png").read_bytes()
         threemf = tmp_path / "test.gcode.3mf"
         _make_orca_3mf(threemf, thumbnail=valid_png)
 
