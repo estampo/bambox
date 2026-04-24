@@ -559,6 +559,57 @@ def _extract_weight_from_gcode(gcode_str: str, filament_type: str = "") -> float
     return 0.0
 
 
+_PRINTER_MODEL_TO_MACHINE: dict[str, str] = {
+    "Bambu Lab P1S": "p1s",
+    "Bambu Lab P1P": "p1s",  # close enough — same profile base
+}
+
+_FILAMENT_TYPE_TO_PROFILE: dict[str, str] = {
+    "PLA": "PLA",
+    "ASA": "ASA",
+    "PETG-CF": "PETG-CF",
+    "PETG": "PLA",  # no PETG profile; PLA is the safest fallback
+    "ABS": "ASA",   # closest available (both engineering/high-temp)
+    "PA": "ASA",
+    "PC": "ASA",
+    "TPU": "PLA",
+}
+
+
+def _autodetect_machine_filaments(
+    orca_ps: dict[str, object], existing_filaments: list[str]
+) -> tuple[str | None, list[str] | None]:
+    """Infer bambox machine + filament profile names from OrcaSlicer project_settings.
+
+    Returns (machine, filaments) if a matching bambox profile exists, else
+    (None, None) so the caller falls back to fixup_project_settings.
+    """
+    from bambox.settings import available_machines, available_filaments
+
+    printer_model = str(orca_ps.get("printer_model", ""))
+    machine = _PRINTER_MODEL_TO_MACHINE.get(printer_model)
+    if not machine or machine not in available_machines():
+        return None, None
+
+    if existing_filaments:
+        filaments = existing_filaments
+    else:
+        raw_types = orca_ps.get("filament_type", [])
+        if isinstance(raw_types, list) and raw_types:
+            first = str(raw_types[0]).upper()
+        elif isinstance(raw_types, str) and raw_types:
+            first = raw_types.upper()
+        else:
+            first = "PLA"
+        avail = set(available_filaments())
+        profile = _FILAMENT_TYPE_TO_PROFILE.get(first, "PLA")
+        if profile not in avail:
+            profile = "PLA"
+        filaments = [profile]
+
+    return machine, filaments
+
+
 def repack_3mf(
     path: Path,
     *,
@@ -592,13 +643,21 @@ def repack_3mf(
         except KeyError:
             ps_raw = None
 
+        if not machine and ps_raw is not None:
+            machine, filaments = _autodetect_machine_filaments(
+                json.loads(ps_raw), filaments or []
+            )
+
         if machine and filaments:
             from bambox.settings import build_project_settings
 
-            ps = build_project_settings(
-                filaments,
-                machine=machine,
-                filament_colors=filament_colors,
+            ps = fixup_project_settings(
+                build_project_settings(
+                    filaments,
+                    machine=machine,
+                    filament_colors=filament_colors,
+                    min_slots=min_slots,
+                ),
                 min_slots=min_slots,
             )
         elif ps_raw is not None:
