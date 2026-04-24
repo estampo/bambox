@@ -569,7 +569,7 @@ _FILAMENT_TYPE_TO_PROFILE: dict[str, str] = {
     "ASA": "ASA",
     "PETG-CF": "PETG-CF",
     "PETG": "PLA",  # no PETG profile; PLA is the safest fallback
-    "ABS": "ASA",   # closest available (both engineering/high-temp)
+    "ABS": "ASA",  # closest available (both engineering/high-temp)
     "PA": "ASA",
     "PC": "ASA",
     "TPU": "PLA",
@@ -644,9 +644,7 @@ def repack_3mf(
             ps_raw = None
 
         if not machine and ps_raw is not None:
-            machine, filaments = _autodetect_machine_filaments(
-                json.loads(ps_raw), filaments or []
-            )
+            machine, filaments = _autodetect_machine_filaments(json.loads(ps_raw), filaments or [])
 
         if machine and filaments:
             from bambox.settings import build_project_settings
