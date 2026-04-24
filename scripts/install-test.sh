@@ -6,9 +6,10 @@ set -euo pipefail
 # Find the latest dev version from the TestPyPI JSON API
 LATEST=$(python3 -c "
 import json, urllib.request
+from packaging.version import Version
 data = json.load(urllib.request.urlopen('https://test.pypi.org/pypi/bambox/json'))
-devs = [v for v in data['releases'] if '.dev' in v]
-devs.sort(key=lambda v: data['releases'][v][0]['upload_time'] if data['releases'][v] else '')
+devs = [v for v in data['releases'] if '.dev' in v and data['releases'][v]]
+devs.sort(key=Version)
 print(devs[-1])
 ")
 
