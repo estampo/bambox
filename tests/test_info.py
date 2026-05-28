@@ -157,6 +157,18 @@ class TestRobustness:
         info = extract_print_info(path)
         assert info.bed_type is None
 
+    def test_filament_with_missing_id_is_included(self, tmp_path: Path) -> None:
+        # A <filament> without a usable id is still reported (id defaults to 0),
+        # matching the historical validate._extract_3mf_metadata behavior.
+        slice_info = MINIMAL_SLICE_INFO.replace(
+            '<filament id="1" tray_info_idx="GFL99" type="PLA"',
+            '<filament tray_info_idx="GFL99" type="PLA"',
+        )
+        path = build_valid_3mf(tmp_path, slice_info=slice_info)
+        info = extract_print_info(path)
+        assert [f.type for f in info.filaments] == ["PLA"]
+        assert info.filaments[0].id == 0
+
     def test_non_numeric_metadata_does_not_raise(self, tmp_path: Path) -> None:
         slice_info = MINIMAL_SLICE_INFO.replace(
             'key="prediction" value="150"', 'key="prediction" value="oops"'
