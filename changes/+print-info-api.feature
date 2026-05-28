@@ -1,1 +1,0 @@
-Add `bambox.info.extract_print_info()` public API for reading filament, time, weight, layer, bed-type, and printer-model metadata from a `.gcode.3mf` archive. Intended for downstream consumers (cloud upload tools, MCP servers) that previously re-implemented zip/XML/gcode-header parsing.
