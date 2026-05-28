@@ -1,0 +1,1 @@
+validate: _extract_3mf_metadata now delegates slice_info parsing to bambox.info, removing the duplicate archive-format parser. extract_print_info now reports filaments with a missing or non-positive id (preserving the previous validate behavior) instead of skipping them.

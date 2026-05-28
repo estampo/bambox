@@ -129,12 +129,9 @@ def _populate_from_slice_info(xml_str: str, info: PrintInfo) -> None:
     info.weight_g = _safe_float(meta.get("weight", "0"))
 
     for f in plate.findall("filament"):
-        fid = _safe_int(f.get("id", "0"))
-        if fid <= 0:
-            continue
         info.filaments.append(
             Filament(
-                id=fid,
+                id=_safe_int(f.get("id", "0")),
                 type=f.get("type", ""),
                 color=_normalize_color(f.get("color", "")),
                 used_m=_safe_float(f.get("used_m", "0")),
