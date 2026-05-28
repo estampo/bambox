@@ -11,7 +11,7 @@ packages = ["src/bambox"]
 
 [project]
 name = "bambox"
-version = "0.5.0"
+version = "0.6.0"
 description = "Package plain G-code into Bambu Lab .gcode.3mf files"
 readme = "README.md"
 license = "MIT AND AGPL-3.0-only"

@@ -5,6 +5,18 @@ This changelog is managed by [towncrier](https://towncrier.readthedocs.io/).
 
 <!-- towncrier release notes start -->
 
+## 0.6.0 — 2026-05-28
+
+### Features
+
+- Add `bambox.info.extract_print_info()` public API for reading filament, time, weight, layer, bed-type, and printer-model metadata from a `.gcode.3mf` archive. Intended for downstream consumers (cloud upload tools, MCP servers) that previously re-implemented zip/XML/gcode-header parsing.
+
+### Misc
+
+- Correct SPDX license expression to MIT AND AGPL-3.0-only, add full AGPL-3.0 text, remove stale CuraEngine notice, pin BambuStudio 2.5.0.66 provenance, document test fixtures in THIRD-PARTY-NOTICES
+- Remove stale CuraEngine path from README and drop imprecise AGPLv3+ PyPI classifier (SPDX expression is AGPL-3.0-only).
+
+
 ## 0.5.0 — 2026-04-24
 
 ### Misc
