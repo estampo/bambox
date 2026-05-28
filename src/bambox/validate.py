@@ -21,6 +21,7 @@ from enum import Enum
 from pathlib import Path
 from typing import IO
 
+from bambox import info
 from bambox.pack import MIN_SLOTS
 
 # Files that must exist in every valid .gcode.3mf archive.
@@ -853,34 +854,16 @@ def _extract_3mf_metadata(path: Path) -> dict[str, object]:
     """Extract comparison-relevant metadata from a .gcode.3mf archive."""
     meta: dict[str, object] = {}
     try:
-        with zipfile.ZipFile(path, "r") as zf:
-            # slice_info
-            si_raw = _safe_read_str(zf, "Metadata/slice_info.config")
-            if si_raw:
-                try:
-                    root = ET.fromstring(si_raw)
-                    plate = root.find("plate")
-                    if plate is not None:
-                        si_meta = {
-                            el.get("key", ""): el.get("value", "")
-                            for el in plate.findall("metadata")
-                        }
-                        meta["printer_model_id"] = si_meta.get("printer_model_id", "")
-                        try:
-                            meta["prediction"] = int(si_meta.get("prediction", "0"))
-                        except ValueError:
-                            meta["prediction"] = 0
-                        try:
-                            meta["weight"] = float(si_meta.get("weight", "0"))
-                        except ValueError:
-                            meta["weight"] = 0.0
-                        # Filament types
-                        filaments = plate.findall("filament")
-                        meta["filament_types"] = [f.get("type", "") for f in filaments]
-                except ET.ParseError:
-                    pass
+        # slice_info-derived fields: delegate to bambox.info so there is a
+        # single parser for the archive format.
+        print_info = info.extract_print_info(path)
+        meta["printer_model_id"] = print_info.printer_model_id
+        meta["prediction"] = print_info.time_seconds
+        meta["weight"] = print_info.weight_g
+        meta["filament_types"] = [f.type for f in print_info.filaments]
 
-            # Count M620 tool changes in gcode
+        # validate-specific: M620 tool-change count from the plate gcode.
+        with zipfile.ZipFile(path, "r") as zf:
             gcode_bytes = _safe_read(zf, "Metadata/plate_1.gcode")
             if gcode_bytes is not None:
                 gcode = gcode_bytes.decode(errors="replace")
@@ -888,7 +871,7 @@ def _extract_3mf_metadata(path: Path) -> dict[str, object]:
             else:
                 meta["tool_changes"] = 0
     except zipfile.BadZipFile:
-        pass
+        return {}
     return meta
 
 
