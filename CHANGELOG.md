@@ -5,6 +5,13 @@ This changelog is managed by [towncrier](https://towncrier.readthedocs.io/).
 
 <!-- towncrier release notes start -->
 
+## 0.6.1 — 2026-05-28
+
+### Misc
+
+- validate: _extract_3mf_metadata now delegates slice_info parsing to bambox.info, removing the duplicate archive-format parser. extract_print_info now reports filaments with a missing or non-positive id (preserving the previous validate behavior) instead of skipping them. ([#268](https://github.com/estampo/bambox/pull/268))
+
+
 ## 0.6.0 — 2026-05-28
 
 ### Features
