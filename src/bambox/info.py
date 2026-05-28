@@ -35,7 +35,11 @@ class Filament:
 
     ``id`` matches the ``id`` attribute on ``<filament>`` in
     ``Metadata/slice_info.config`` (1-indexed in BambuStudio output).
-    ``color`` is the 6-character uppercase hex string with no leading ``#``.
+    ``color`` is the color string from the archive with any leading ``#``
+    stripped and the remainder uppercased — typically a 6-character hex
+    string, but no length validation is performed.
+    ``tray_info_idx`` is the Bambu AMS filament identifier (e.g. ``"GFL99"``
+    for Bambu PLA Basic Orange).  Empty string if the archive omits it.
     """
 
     id: int
@@ -43,6 +47,7 @@ class Filament:
     color: str
     used_m: float
     used_g: float
+    tray_info_idx: str = ""
 
 
 @dataclass
@@ -134,6 +139,7 @@ def _populate_from_slice_info(xml_str: str, info: PrintInfo) -> None:
                 color=_normalize_color(f.get("color", "")),
                 used_m=_safe_float(f.get("used_m", "0")),
                 used_g=_safe_float(f.get("used_g", "0")),
+                tray_info_idx=f.get("tray_info_idx", ""),
             )
         )
 
@@ -148,18 +154,24 @@ def _extract_bed_type(raw: str) -> str | None:
 
 
 def _extract_layer_count(zf: zipfile.ZipFile) -> int:
-    """Return the layer count from the first plate gcode header, or 0."""
+    """Return the layer count from the plate gcode header, or 0.
+
+    Prefers ``Metadata/plate_1.gcode`` (the only plate in single-plate
+    archives, which is every current bambox use case); falls back to the
+    first ``Metadata/plate_*.gcode`` if plate_1 is absent.
+    """
+    names = zf.namelist()
     gcode_name: str | None = None
-    for name in zf.namelist():
-        if name.startswith("Metadata/plate_") and name.endswith(".gcode"):
-            gcode_name = name
-            break
+    if "Metadata/plate_1.gcode" in names:
+        gcode_name = "Metadata/plate_1.gcode"
+    else:
+        for name in names:
+            if name.startswith("Metadata/plate_") and name.endswith(".gcode"):
+                gcode_name = name
+                break
     if gcode_name is None:
         return 0
-    try:
-        head = zf.read(gcode_name)[:_HEADER_SCAN_BYTES].decode(errors="replace")
-    except KeyError:
-        return 0
+    head = zf.read(gcode_name)[:_HEADER_SCAN_BYTES].decode(errors="replace")
     m = _RE_TOTAL_LAYERS.search(head) or _RE_LAYER_COUNT.search(head)
     return int(m.group(1)) if m else 0
 

@@ -24,6 +24,16 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures" / "e2e_cura_p1s"
 REFERENCE_3MF = FIXTURE_DIR / "reference.gcode.3mf"
 
 
+class TestPackageReexport:
+    def test_public_api_importable_from_package(self) -> None:
+        import bambox
+
+        assert bambox.extract_print_info is extract_print_info
+        assert bambox.extract_print_info_buffer is extract_print_info_buffer
+        assert bambox.PrintInfo is PrintInfo
+        assert bambox.Filament is Filament
+
+
 class TestPrintInfoDefaults:
     def test_empty_defaults(self) -> None:
         p = PrintInfo()
@@ -41,7 +51,16 @@ class TestPrintInfoDefaults:
             layers=3,
             bed_type="Textured PEI Plate",
             printer_model_id="C12",
-            filaments=[Filament(id=1, type="PLA", color="F2754E", used_m=1.0, used_g=3.0)],
+            filaments=[
+                Filament(
+                    id=1,
+                    type="PLA",
+                    color="F2754E",
+                    used_m=1.0,
+                    used_g=3.0,
+                    tray_info_idx="GFL99",
+                )
+            ],
         )
         # Must not raise
         d = p.to_dict()
@@ -68,6 +87,7 @@ class TestMinimalArchive:
         assert f.color == "F2754E"  # leading '#' stripped, uppercased
         assert f.used_m == 1.0
         assert f.used_g == 3.0
+        assert f.tray_info_idx == "GFL99"
 
     def test_bed_type_present_when_set(self, tmp_path: Path) -> None:
         settings = json.dumps({"curr_bed_type": "Textured PEI Plate"})
@@ -105,6 +125,8 @@ class TestMultiFilament:
         assert info.filaments[1].type == "PETG-CF"
         assert info.filaments[1].color == "2850E0"
         assert info.filaments[1].used_g == 7.20
+        assert info.filaments[0].tray_info_idx == "GFL99"
+        assert info.filaments[1].tray_info_idx == "GFL00"
 
 
 class TestRobustness:
