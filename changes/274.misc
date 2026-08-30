@@ -1,0 +1,1 @@
+Prepare Release now re-locks `uv.lock` with the new version, so the lockfile no longer drifts behind `pyproject.toml` after each release.

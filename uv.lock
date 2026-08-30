@@ -13,7 +13,7 @@ wheels = [
 
 [[package]]
 name = "bambox"
-version = "0.6.1"
+version = "0.6.2"
 source = { editable = "." }
 dependencies = [
     { name = "rich" },
@@ -33,13 +33,21 @@ dev = [
 docs = [
     { name = "pdoc" },
 ]
+templates = [
+    { name = "jinja2" },
+]
+thumbnail = [
+    { name = "pillow" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "jinja2", marker = "extra == 'dev'", specifier = ">=3.1.0" },
+    { name = "jinja2", marker = "extra == 'templates'", specifier = ">=3.1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
     { name = "pdoc", marker = "extra == 'docs'", specifier = ">=14.0.0" },
     { name = "pillow", marker = "extra == 'dev'", specifier = ">=10.0.0" },
+    { name = "pillow", marker = "extra == 'thumbnail'", specifier = ">=10.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "rich", specifier = ">=13.0" },
@@ -47,7 +55,7 @@ requires-dist = [
     { name = "towncrier", marker = "extra == 'dev'", specifier = ">=24.7.0" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["dev", "docs"]
+provides-extras = ["templates", "thumbnail", "dev", "docs"]
 
 [[package]]
 name = "click"

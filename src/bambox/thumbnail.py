@@ -16,7 +16,13 @@ def gcode_thumbnail(
     Parses G0/G1 extrusion moves from the print body (skipping startup
     G-code) and draws them on a dark background. Returns PNG bytes.
     """
-    from PIL import Image, ImageDraw
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        raise ImportError(
+            "Pillow is required for thumbnail rendering. "
+            "Install with: pip install bambox[thumbnail]"
+        )
 
     if isinstance(gcode, bytes):
         gcode = gcode.decode(errors="replace")

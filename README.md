@@ -69,6 +69,19 @@ Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv pip install bambox
+uv tool install bambox   # just the CLI
+```
+
+The core install covers packing, repacking and validation. Two optional
+extras pull in heavier dependencies only if you need them:
+
+| Extra | Pulls in | Needed for |
+|-------|----------|------------|
+| `templates` | Jinja2 | `bambox.templates.render_template()` — rendering bundled G-code templates |
+| `thumbnail` | Pillow | `bambox.thumbnail.gcode_thumbnail()` — rendering toolpath previews |
+
+```bash
+pip install "bambox[templates,thumbnail]"
 ```
 
 ### Supported printers and filaments

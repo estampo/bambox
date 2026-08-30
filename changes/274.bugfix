@@ -1,0 +1,1 @@
+Declare the `templates` (Jinja2) and `thumbnail` (Pillow) extras that `render_template()` and `gcode_thumbnail()` already told users to install, and give `gcode_thumbnail()` the same actionable error as `render_template()` when Pillow is missing.
