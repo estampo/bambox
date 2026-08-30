@@ -171,3 +171,19 @@ class TestThirdPartyNoticesShipped:
             "THIRD-PARTY-NOTICES should be placed under bambox/ in the wheel "
             "so it's discoverable next to the installed package."
         )
+
+
+# ---------------------------------------------------------------------------
+# 5. Optional extras named in ImportError hints must exist
+# ---------------------------------------------------------------------------
+
+
+class TestOptionalExtras:
+    """`pip install bambox[<extra>]` hints must point at a real extra."""
+
+    @pytest.mark.parametrize("extra", ["templates", "thumbnail"])
+    def test_extra_is_declared(self, extra: str) -> None:
+        from importlib.metadata import metadata
+
+        declared = metadata("bambox").get_all("Provides-Extra") or []
+        assert extra in declared
