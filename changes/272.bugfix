@@ -1,1 +1,0 @@
-Fix `uv tool install bambox` / `pip install bambox` producing a CLI that crashed with `ModuleNotFoundError: No module named 'click'` on typer 0.25+, which vendors its own copy of Click.

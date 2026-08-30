@@ -5,6 +5,13 @@ This changelog is managed by [towncrier](https://towncrier.readthedocs.io/).
 
 <!-- towncrier release notes start -->
 
+## 0.6.2 — 2026-08-30
+
+### Bugfixes
+
+- Fix `uv tool install bambox` / `pip install bambox` producing a CLI that crashed with `ModuleNotFoundError: No module named 'click'` on typer 0.25+, which vendors its own copy of Click. ([#272](https://github.com/estampo/bambox/pull/272))
+
+
 ## 0.6.1 — 2026-05-28
 
 ### Misc
