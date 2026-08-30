@@ -421,3 +421,23 @@ class TestMainDispatch:
     def test_no_command_with_flag_only(self) -> None:
         with pytest.raises(SystemExit, match="2"):
             main(["--nonexistent-flag"])
+
+
+# ---------------------------------------------------------------------------
+# Entry point exception handling
+# ---------------------------------------------------------------------------
+
+
+class TestUsageErrorHandling:
+    def test_usage_error_matches_installed_typer(self) -> None:
+        """main() must catch the UsageError class the installed typer raises.
+
+        typer >= 0.25 vendors its own copy of Click, so importing
+        ``click.UsageError`` from the standalone package would silently stop
+        matching (and the click package is no longer installed at all).
+        """
+        import typer
+
+        from bambox.cli import UsageError
+
+        assert issubclass(typer.BadParameter, UsageError)

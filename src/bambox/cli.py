@@ -7,9 +7,13 @@ from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Annotated, Optional
 
-import click
 import typer
 from rich.markup import escape
+
+try:  # typer >= 0.25 vendors its own copy of Click
+    from typer._click.exceptions import UsageError
+except ImportError:  # typer < 0.25 depends on the click package
+    from click.exceptions import UsageError  # type: ignore[assignment]
 
 from bambox import ui
 from bambox.cura import (
@@ -453,6 +457,6 @@ def validate(
 def main(argv: list[str] | None = None) -> None:
     try:
         app(argv, standalone_mode=False)
-    except click.UsageError as exc:
+    except UsageError as exc:
         ui.error(str(exc))
         sys.exit(2)
