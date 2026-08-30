@@ -5,6 +5,17 @@ This changelog is managed by [towncrier](https://towncrier.readthedocs.io/).
 
 <!-- towncrier release notes start -->
 
+## 0.6.3 — 2026-08-30
+
+### Bugfixes
+
+- Declare the `templates` (Jinja2) and `thumbnail` (Pillow) extras that `render_template()` and `gcode_thumbnail()` already told users to install, and give `gcode_thumbnail()` the same actionable error as `render_template()` when Pillow is missing. ([#274](https://github.com/estampo/bambox/pull/274))
+
+### Misc
+
+- Prepare Release now re-locks `uv.lock` with the new version, so the lockfile no longer drifts behind `pyproject.toml` after each release. ([#274](https://github.com/estampo/bambox/pull/274))
+
+
 ## 0.6.2 — 2026-08-30
 
 ### Bugfixes
